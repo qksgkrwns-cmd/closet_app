@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'edit_clothes_page.dart';
+import '../pages/clothes_detail_page.dart';
 
 class ClothesDetailPage extends StatelessWidget {
   final Map item;
@@ -12,9 +12,7 @@ class ClothesDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('옷 정보'),
-      ),
+      appBar: AppBar(title: const Text('옷 정보')),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -44,25 +42,10 @@ class ClothesDetailPage extends StatelessWidget {
                       const SizedBox(height: 8),
                       Text('색상 : ${item['color']}'),
                       const SizedBox(height: 8),
-                      Text(
-                        '계절 : ${(item['seasons'] ?? []).join(", ")}',
-                      ),
+                      Text('계절 : ${(item['seasons'] ?? []).join(", ")}'),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EditClothesPage(item: item),
-                    ),
-                  );
-                  Navigator.pop(context);
-                },
-                child: const Text('수정'),
               ),
             ],
           ),
