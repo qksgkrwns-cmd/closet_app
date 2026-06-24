@@ -1,56 +1,47 @@
-import 'dart:convert';
 import 'dart:io';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
 
 class GeminiService {
-  static Future<Map<String, dynamic>> analyzeClothesImage(
-    File imageFile,
-  ) async {
-    try {
-      final model = GenerativeModel(
-        model: dotenv.env['GEMINI_MODEL']!,
-        apiKey: dotenv.env['GEMINI_API_KEY']!,
-      );
+  static final _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+  static final _model = dotenv.env['GEMINI_MODEL'] ?? 'gemini-2.0-flash';
 
+  static Future<Map<String, dynamic>?> analyzeClothesImage(
+    File imageFile, {
+    bool enableAnalysis = true,
+  }) async {
+    if (!enableAnalysis || _apiKey.isEmpty) return null;
+
+    try {
+      final client = GenerativeAI(apiKey: _apiKey).generativeModel(model: _model);
       final imageBytes = await imageFile.readAsBytes();
 
-      final prompt = TextPart('''
-사진 속 의류를 분석하여 JSON만 반환하세요.
-
-JSON 타입으로 만들어줘.
-
+      final prompt = '''
+Analyze this clothing image and return the following information in JSON format (respond in Korean):
 {
-  "category":"상의",
-  "brand":"Nike",
-  "color":"검정",
-  "seasons":["봄","가을"]
+  "category": "Choose one: top/bottom/outerwear/shoes/hat",
+  "brand": "Estimated brand (or 'unknown')",
+  "color": "Main color",
+  "seasons": ["Suitable seasons"]
 }
+      ''';
 
-규칙:
-- 브랜드 로고가 보이면 브랜드명 반환
-- 모르면 "기타"
-- category는 상의/하의/아우터/신발/모자
-- seasons는 배열
-- JSON 외 텍스트 금지
-''');
+      final response = await client.generateContent(
+        [
+          Content.multi([
+            TextPart(prompt),
+            DataPart('image/jpeg', imageBytes),
+          ]),
+        ],
+      );
 
-      final response = await model.generateContent([
-        Content.multi([
-          prompt,
-          DataPart('image/jpeg', imageBytes),
-        ])
-      ]);
-
-      final text = response.text ?? '';
-      final cleaned = text
-          .replaceAll('```json', '')
-          .replaceAll('```', '')
-          .trim();
-
-      return jsonDecode(cleaned);
+      final jsonStr = response.text?.replaceAll('```json', '').replaceAll('```', '').trim() ?? '{}';
+      final json = jsonDecode(jsonStr) as Map<String, dynamic>;
+      return json;
     } catch (e) {
-      rethrow;
+      print('Gemini API Error: $e');
+      return null;
     }
   }
 }
