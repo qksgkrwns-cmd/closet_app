@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile.dart';
 import '../services/profile_service.dart';
@@ -11,7 +12,7 @@ class ProfileSetupPage extends StatefulWidget {
 }
 
 class _ProfileSetupPageState extends State<ProfileSetupPage> {
-  String selectedBodyType = '직사각형';
+  String selectedBodyType = '보통 체형';
   String selectedSkinTone = '중간색';
   List<String> selectedStyles = [];
   final heightController = TextEditingController();
@@ -19,7 +20,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   final usernameController = TextEditingController();
   bool isLoading = false;
 
-  final bodyTypes = ['마름모', '직사각형', '모래시계', '역삼각형', '삼각형'];
+  final bodyTypes = ['마른', '보통', '통통', '상체발달', '하체발달', '근육'];
   final skinTones = ['밝은색', '중간색', '어두운색'];
   final styles = ['캐주얼', '시크', '스포츠', '우아함', '펑키', '미니멀'];
 
@@ -30,6 +31,31 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
     if (user != null) {
       usernameController.text = user.email?.split('@')[0] ?? 'user';
     }
+    _loadExistingProfile();
+  }
+
+  Future<void> _loadExistingProfile() async {
+    final profile = await ProfileService.getCurrentProfile();
+    if (!mounted || profile == null) return;
+
+    setState(() {
+      usernameController.text = profile.username;
+
+      if (bodyTypes.contains(profile.bodyType)) {
+        selectedBodyType = profile.bodyType;
+      }
+
+      if (skinTones.contains(profile.skinTone)) {
+        selectedSkinTone = profile.skinTone;
+      }
+
+      selectedStyles = profile.stylePreferences
+          .where((style) => styles.contains(style))
+          .toList();
+
+      heightController.text = profile.height?.toString() ?? '';
+      weightController.text = profile.weight?.toString() ?? '';
+    });
   }
 
   Future<void> saveProfile() async {
@@ -59,7 +85,12 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       await ProfileService.saveProfile(profile);
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      print(e);
+      debugPrint('Profile save error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('저장 실패: $e')),
+        );
+      }
     } finally {
       setState(() => isLoading = false);
     }

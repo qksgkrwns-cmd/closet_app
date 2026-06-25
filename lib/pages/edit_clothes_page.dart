@@ -21,8 +21,11 @@ class _EditClothesPageState extends State<EditClothesPage> {
   late String selectedBrand;
   late String selectedColor;
   late List<String> selectedSeasons;
+  DateTime? purchaseDate;
 
   final brandController = TextEditingController();
+  final priceController = TextEditingController();
+  final commentController = TextEditingController();
   File? selectedImage;
 
   @override
@@ -30,15 +33,37 @@ class _EditClothesPageState extends State<EditClothesPage> {
     super.initState();
     selectedCategory = widget.item['category'];
     selectedBrand = widget.item['brand'] ?? '기타';
-    selectedColor = widget.item['color'];
+    selectedColor = normalizeColorLabel(widget.item['color']?.toString());
     brandController.text = selectedBrand;
     selectedSeasons = List<String>.from(widget.item['seasons'] ?? []);
+    final rawPurchaseDate = widget.item['purchase_date'];
+    if (rawPurchaseDate is String && rawPurchaseDate.isNotEmpty) {
+      purchaseDate = DateTime.tryParse(rawPurchaseDate);
+    }
+    priceController.text = (widget.item['purchase_price'] ?? '').toString();
+    commentController.text = (widget.item['comment'] ?? '').toString();
   }
 
   @override
   void dispose() {
     brandController.dispose();
+    priceController.dispose();
+    commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> pickPurchaseDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: purchaseDate ?? now,
+      firstDate: DateTime(2000),
+      lastDate: now,
+    );
+
+    if (picked != null) {
+      setState(() => purchaseDate = picked);
+    }
   }
 
   Future<void> pickImage() async {
@@ -58,10 +83,13 @@ class _EditClothesPageState extends State<EditClothesPage> {
       brand: selectedBrand,
       color: selectedColor,
       seasons: selectedSeasons,
+      purchaseDate: purchaseDate,
+      purchasePrice: int.tryParse(priceController.text.trim()),
+      comment: commentController.text,
       newImageFile: selectedImage,
       oldImageUrl: widget.item['image_url'],
     );
-    if (mounted) Navigator.pop(context);
+    if (mounted) Navigator.pop(context, true);
   }
 
   @override
@@ -96,6 +124,42 @@ class _EditClothesPageState extends State<EditClothesPage> {
                 controller: brandController,
                 decoration: const InputDecoration(labelText: '브랜드'),
                 onChanged: (value) => selectedBrand = value,
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('구입 시기 (선택)'),
+                subtitle: Text(
+                  purchaseDate == null
+                      ? '미입력'
+                      : '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}',
+                ),
+                trailing: Wrap(
+                  spacing: 8,
+                  children: [
+                    if (purchaseDate != null)
+                      IconButton(
+                        onPressed: () => setState(() => purchaseDate = null),
+                        icon: const Icon(Icons.clear),
+                      ),
+                    IconButton(
+                      onPressed: pickPurchaseDate,
+                      icon: const Icon(Icons.calendar_today),
+                    ),
+                  ],
+                ),
+              ),
+              TextFormField(
+                controller: priceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '구입 가격 (선택)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: commentController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: '메모 (선택)'),
               ),
               const SizedBox(height: 16),
               ColorSelector(

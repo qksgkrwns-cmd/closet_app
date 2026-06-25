@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/profile_service.dart';
 import '../services/supabase_service.dart';
-import '../widgets/clothes_list_item.dart';
 import 'add_clothes_page.dart';
+import 'clothes_detail_page.dart';
 import 'profile_setup_page.dart';
 import 'similar_users_page.dart';
+import 'saved_outfits_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -24,13 +27,75 @@ class _HomePageState extends State<HomePage> {
     loadClothes();
   }
 
-  Future<void> loadClothes() async {
-    final data = await SupabaseService.fetchClothes(
-      category: selectedFilter,
+  Future<void> _onTapSimilarUsers() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('로그인이 필요합니다.')),
+      );
+      return;
+    }
+
+    final profile = await ProfileService.getCurrentProfile();
+    final isComplete = ProfileService.isProfileComplete(profile);
+
+    if (!isComplete) {
+      if (!mounted) return;
+      final shouldSetup = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('프로필 보완'),
+          content: const Text('비슷한 사람 추천을 위해 체형/피부톤/스타일 정보를 입력해주세요.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('나중에'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('지금 입력'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldSetup != true || !mounted) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ProfileSetupPage(),
+        ),
+      );
+
+      final refreshed = await ProfileService.getCurrentProfile();
+      if (!ProfileService.isProfileComplete(refreshed) || !mounted) return;
+    }
+
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SimilarUsersPage(),
+      ),
     );
-    setState(() {
-      clothes = data;
-    });
+  }
+
+  Future<void> loadClothes() async {
+    try {
+      final data = await SupabaseService.fetchClothes(
+        category: selectedFilter,
+      );
+      setState(() {
+        clothes = data;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
   }
 
   List<dynamic> getFilteredClothes() {
@@ -46,6 +111,12 @@ class _HomePageState extends State<HomePage> {
     }).toList();
   }
 
+  String _formatCreatedAt(dynamic raw) {
+    final parsed = DateTime.tryParse(raw?.toString() ?? '');
+    if (parsed == null) return '';
+    return '${parsed.year}.${parsed.month}.${parsed.day}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredClothes = getFilteredClothes();
@@ -53,6 +124,13 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('내 옷장'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: '로그아웃',
+            onPressed: () async {
+              await Supabase.instance.client.auth.signOut();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () {
@@ -109,19 +187,85 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                childAspectRatio: 0.58,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+              ),
               itemCount: filteredClothes.length,
               itemBuilder: (context, index) {
                 final item = filteredClothes[index];
-                return ClothesListItem(
-                  item: item,
-                  onDelete: () async {
-                    await SupabaseService.deleteClothes(item);
+                return InkWell(
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ClothesDetailPage(item: item),
+                      ),
+                    );
                     loadClothes();
                   },
-                  onUpdate: () {
-                    loadClothes();
+                  onLongPress: () async {
+                    final shouldDelete = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('삭제'),
+                        content: const Text('이 옷을 삭제할까요?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('취소'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('삭제'),
+                          ),
+                        ],
+                      ),
+                    );
+
+                    if (shouldDelete == true) {
+                      await SupabaseService.deleteClothes(item);
+                      loadClothes();
+                    }
                   },
+                  child: Card(
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: item['image_url'] != null
+                              ? Image.network(item['image_url'], fit: BoxFit.cover)
+                              : Container(
+                                  color: Colors.grey.shade200,
+                                  child: const Icon(Icons.checkroom, size: 32),
+                                ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 2),
+                          child: Text(
+                            (item['brand'] ?? 'No Brand').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                          child: Text(
+                            _formatCreatedAt(item['created_at']),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 );
               },
             ),
@@ -150,10 +294,12 @@ class _HomePageState extends State<HomePage> {
         onTap: (index) {
           setState(() => _selectedIndex = index);
           if (index == 1) {
+            _onTapSimilarUsers();
+          } else if (index == 2) {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const SimilarUsersPage(),
+                builder: (context) => const SavedOutfitsPage(),
               ),
             );
           }

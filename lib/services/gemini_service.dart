@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
@@ -11,10 +12,17 @@ class GeminiService {
     File imageFile, {
     bool enableAnalysis = true,
   }) async {
-    if (!enableAnalysis || _apiKey.isEmpty) return null;
+    if (!enableAnalysis) {
+      debugPrint('[AI] Analysis skipped: disabled by user setting.');
+      return null;
+    }
+    if (_apiKey.isEmpty) {
+      debugPrint('[AI] Analysis skipped: GEMINI_API_KEY is missing.');
+      return null;
+    }
 
     try {
-      final client = GenerativeAI(apiKey: _apiKey).generativeModel(model: _model);
+      final model = GenerativeModel(model: _model, apiKey: _apiKey);
       final imageBytes = await imageFile.readAsBytes();
 
       final prompt = '''
@@ -27,7 +35,7 @@ Analyze this clothing image and return the following information in JSON format 
 }
       ''';
 
-      final response = await client.generateContent(
+      final response = await model.generateContent(
         [
           Content.multi([
             TextPart(prompt),
@@ -37,10 +45,11 @@ Analyze this clothing image and return the following information in JSON format 
       );
 
       final jsonStr = response.text?.replaceAll('```json', '').replaceAll('```', '').trim() ?? '{}';
+      debugPrint('[AI] Gemini text response: $jsonStr');
       final json = jsonDecode(jsonStr) as Map<String, dynamic>;
       return json;
     } catch (e) {
-      print('Gemini API Error: $e');
+      debugPrint('[AI] Gemini API error: $e');
       return null;
     }
   }

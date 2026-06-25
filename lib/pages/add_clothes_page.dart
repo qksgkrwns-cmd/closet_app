@@ -15,9 +15,12 @@ class AddClothesPage extends StatefulWidget {
 class _AddClothesPageState extends State<AddClothesPage> {
   File? selectedImage;
   String selectedCategory = '상의';
-  String selectedColor = '검정';
+  String selectedColor = '블랙';
   String selectedBrand = '기타';
   List<String> selectedSeasons = [];
+  DateTime? purchaseDate;
+  final priceController = TextEditingController();
+  final commentController = TextEditingController();
   bool enableAIAnalysis = true;
   final brandController = TextEditingController();
 
@@ -30,7 +33,23 @@ class _AddClothesPageState extends State<AddClothesPage> {
   @override
   void dispose() {
     brandController.dispose();
+    priceController.dispose();
+    commentController.dispose();
     super.dispose();
+  }
+
+  Future<void> pickPurchaseDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: purchaseDate ?? now,
+      firstDate: DateTime(2000),
+      lastDate: now,
+    );
+
+    if (picked != null) {
+      setState(() => purchaseDate = picked);
+    }
   }
 
   Future<void> pickImage() async {
@@ -47,19 +66,29 @@ class _AddClothesPageState extends State<AddClothesPage> {
   Future<void> analyzeImage() async {
     if (selectedImage == null) return;
     try {
+      debugPrint('[AI] analyzeImage started (enabled: $enableAIAnalysis)');
       final result = await GeminiService.analyzeClothesImage(
         selectedImage!,
         enableAnalysis: enableAIAnalysis,
       );
-      if (result == null) return;
+      if (result == null) {
+        debugPrint('[AI] No analysis result (disabled or API key missing/failure).');
+        return;
+      }
+
+      debugPrint('[AI] Raw result: $result');
       setState(() {
         selectedCategory = result['category'] ?? '상의';
         selectedBrand = result['brand'] ?? '기타';
         brandController.text = selectedBrand;
-        selectedColor = result['color'] ?? '검정';
+        selectedColor = normalizeColorLabel(result['color']?.toString());
         selectedSeasons = List<String>.from(result['seasons'] ?? []);
       });
+      debugPrint(
+        '[AI] Applied -> category: $selectedCategory, brand: $selectedBrand, color: $selectedColor, seasons: $selectedSeasons',
+      );
     } catch (e) {
+      debugPrint('[AI] analyzeImage error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('AI 분석 실패')),
@@ -75,11 +104,14 @@ class _AddClothesPageState extends State<AddClothesPage> {
         brand: selectedBrand,
         color: selectedColor,
         seasons: selectedSeasons,
+        purchaseDate: purchaseDate,
+        purchasePrice: int.tryParse(priceController.text.trim()),
+        comment: commentController.text,
         imageFile: selectedImage,
       );
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      print(e);
+      debugPrint('[AI] saveClothes error: $e');
     }
   }
 
@@ -121,6 +153,42 @@ class _AddClothesPageState extends State<AddClothesPage> {
               TextFormField(
                 controller: brandController,
                 onChanged: (value) => selectedBrand = value,
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('구입 시기 (선택)'),
+                subtitle: Text(
+                  purchaseDate == null
+                      ? '미입력'
+                      : '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}',
+                ),
+                trailing: Wrap(
+                  spacing: 8,
+                  children: [
+                    if (purchaseDate != null)
+                      IconButton(
+                        onPressed: () => setState(() => purchaseDate = null),
+                        icon: const Icon(Icons.clear),
+                      ),
+                    IconButton(
+                      onPressed: pickPurchaseDate,
+                      icon: const Icon(Icons.calendar_today),
+                    ),
+                  ],
+                ),
+              ),
+              TextFormField(
+                controller: priceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '구입 가격 (선택)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: commentController,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: '메모 (선택)'),
               ),
               const SizedBox(height: 20),
               ColorSelector(

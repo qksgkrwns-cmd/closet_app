@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
+import 'color_selector.dart';
 
 class ClothesListItem extends StatelessWidget {
   final Map item;
   final VoidCallback onDelete;
   final VoidCallback onUpdate;
+  final VoidCallback onTap;
 
   const ClothesListItem({
     super.key,
     required this.item,
     required this.onDelete,
     required this.onUpdate,
+    required this.onTap,
   });
 
   void _showDeleteDialog(BuildContext context) async {
@@ -35,8 +38,13 @@ class ClothesListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final wearCount = (item['wear_count'] is num)
+        ? (item['wear_count'] as num).toInt()
+        : int.tryParse(item['wear_count']?.toString() ?? '0') ?? 0;
+
     return Card(
       child: ListTile(
+        onTap: onTap,
         onLongPress: () => _showDeleteDialog(context),
         leading: item['image_url'] != null
             ? SizedBox(
@@ -46,7 +54,7 @@ class ClothesListItem extends StatelessWidget {
               )
             : const Icon(Icons.checkroom),
         title: Text(item['category'] ?? ''),
-        subtitle: Text('${item['brand'] ?? "기타"} · ${item['color']}'),
+        subtitle: Text('${item['brand'] ?? "기타"} · ${normalizeColorLabel(item['color']?.toString())} · 착용 ${wearCount}회'),
       ),
     );
   }

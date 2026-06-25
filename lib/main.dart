@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'pages/home_page.dart';
+import 'pages/auth_gate_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,7 +21,14 @@ class ClosetApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: const HomePage(),
+      home: const AuthGatePage(),
+      onGenerateRoute: (settings) {
+        // Supabase magic-link deeplink can arrive as '/?code=...'.
+        return MaterialPageRoute(builder: (_) => const AuthGatePage());
+      },
+      onUnknownRoute: (settings) {
+        return MaterialPageRoute(builder: (_) => const AuthGatePage());
+      },
     );
   }
 }

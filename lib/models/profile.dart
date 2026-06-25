@@ -22,16 +22,23 @@ class Profile {
   });
 
   factory Profile.fromJson(Map<String, dynamic> json) {
+    final rawStyles = json['style_preferences'] ??
+        json['style_preference'] ??
+        json['styles'] ??
+        <dynamic>[];
+
     return Profile(
       id: json['id'],
-      username: json['username'],
-      bodyType: json['body_type'],
+      username: (json['username'] ?? 'user').toString(),
+      bodyType: (json['body_type'] ?? '미설정').toString(),
       height: json['height'],
       weight: json['weight'],
-      skinTone: json['skin_tone'],
-      stylePreferences: List<String>.from(json['style_preferences'] ?? []),
+      skinTone: (json['skin_tone'] ?? '미설정').toString(),
+      stylePreferences: List<String>.from(rawStyles),
       avatarUrl: json['avatar_url'],
-      createdAt: DateTime.parse(json['created_at']),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
     );
   }
 

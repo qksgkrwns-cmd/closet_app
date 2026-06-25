@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/clothing.dart';
 import '../services/supabase_service.dart';
 
 final clothesProvider = FutureProvider<List<dynamic>>((ref) async {
