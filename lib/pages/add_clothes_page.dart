@@ -18,6 +18,7 @@ class _AddClothesPageState extends State<AddClothesPage> {
   String selectedColor = '검정';
   String selectedBrand = '기타';
   List<String> selectedSeasons = [];
+  bool enableAIAnalysis = true;
   final brandController = TextEditingController();
 
   @override
@@ -35,21 +36,22 @@ class _AddClothesPageState extends State<AddClothesPage> {
   Future<void> pickImage() async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
-
     if (file != null) {
       setState(() {
         selectedImage = File(file.path);
       });
-      //await analyzeImage();
+      await analyzeImage();
     }
   }
 
   Future<void> analyzeImage() async {
     if (selectedImage == null) return;
-
     try {
-      final result = await GeminiService.analyzeClothesImage(selectedImage!);
-
+      final result = await GeminiService.analyzeClothesImage(
+        selectedImage!,
+        enableAnalysis: enableAIAnalysis,
+      );
+      if (result == null) return;
       setState(() {
         selectedCategory = result['category'] ?? '상의';
         selectedBrand = result['brand'] ?? '기타';
@@ -60,11 +62,7 @@ class _AddClothesPageState extends State<AddClothesPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'AI 분석 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.',
-            ),
-          ),
+          const SnackBar(content: Text('AI 분석 실패')),
         );
       }
     }
@@ -79,10 +77,7 @@ class _AddClothesPageState extends State<AddClothesPage> {
         seasons: selectedSeasons,
         imageFile: selectedImage,
       );
-
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
       print(e);
     }
@@ -91,25 +86,28 @@ class _AddClothesPageState extends State<AddClothesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('옷 등록'),
-      ),
+      appBar: AppBar(title: const Text('옷 등록')),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              ElevatedButton(
-                onPressed: pickImage,
-                child: const Text('사진 선택'),
+              Card(
+                child: ListTile(
+                  title: const Text('AI 자동 분석'),
+                  trailing: Switch(
+                    value: enableAIAnalysis,
+                    onChanged: (value) => setState(() => enableAIAnalysis = value),
+                  ),
+                ),
               ),
+              const SizedBox(height: 16),
+              ElevatedButton(onPressed: pickImage, child: const Text('사진 선택')),
               const SizedBox(height: 20),
-              if (selectedImage != null)
-                Image.file(selectedImage!, height: 200),
+              if (selectedImage != null) Image.file(selectedImage!, height: 200),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: selectedCategory,
-                decoration: const InputDecoration(labelText: '카테고리'),
                 items: const [
                   DropdownMenuItem(value: '상의', child: Text('상의')),
                   DropdownMenuItem(value: '하의', child: Text('하의')),
@@ -117,63 +115,34 @@ class _AddClothesPageState extends State<AddClothesPage> {
                   DropdownMenuItem(value: '신발', child: Text('신발')),
                   DropdownMenuItem(value: '모자', child: Text('모자')),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    selectedCategory = value!;
-                  });
-                },
+                onChanged: (value) => setState(() => selectedCategory = value!),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: brandController,
-                decoration: const InputDecoration(labelText: '브랜드'),
-                onChanged: (value) {
-                  selectedBrand = value;
-                },
+                onChanged: (value) => selectedBrand = value,
               ),
               const SizedBox(height: 20),
               ColorSelector(
                 selectedColor: selectedColor,
-                onColorSelected: (color) {
-                  setState(() {
-                    selectedColor = color;
-                  });
-                },
+                onColorSelected: (color) => setState(() => selectedColor = color),
               ),
               const SizedBox(height: 20),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '계절',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 children: ['봄', '여름', '가을', '겨울']
-                    .map((season) {
-                      return FilterChip(
-                        label: Text(season),
-                        selected: selectedSeasons.contains(season),
-                        onSelected: (selected) {
-                          setState(() {
-                            if (selected) {
-                              selectedSeasons.add(season);
-                            } else {
-                              selectedSeasons.remove(season);
-                            }
-                          });
-                        },
-                      );
-                    })
+                    .map((season) => FilterChip(
+                          label: Text(season),
+                          selected: selectedSeasons.contains(season),
+                          onSelected: (selected) => setState(() {
+                            if (selected) selectedSeasons.add(season);
+                            else selectedSeasons.remove(season);
+                          }),
+                        ))
                     .toList(),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: saveClothes,
-                child: const Text('저장'),
-              ),
+              ElevatedButton(onPressed: saveClothes, child: const Text('저장')),
             ],
           ),
         ),

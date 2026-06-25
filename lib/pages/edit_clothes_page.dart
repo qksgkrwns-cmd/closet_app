@@ -44,7 +44,6 @@ class _EditClothesPageState extends State<EditClothesPage> {
   Future<void> pickImage() async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: ImageSource.gallery);
-
     if (file != null) {
       setState(() {
         selectedImage = File(file.path);
@@ -62,18 +61,13 @@ class _EditClothesPageState extends State<EditClothesPage> {
       newImageFile: selectedImage,
       oldImageUrl: widget.item['image_url'],
     );
-
-    if (mounted) {
-      Navigator.pop(context);
-    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('옷 수정'),
-      ),
+      appBar: AppBar(title: const Text('옷 수정')),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -84,10 +78,7 @@ class _EditClothesPageState extends State<EditClothesPage> {
               else if (widget.item['image_url'] != null)
                 Image.network(widget.item['image_url'], height: 200),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: pickImage,
-                child: const Text('사진 변경'),
-              ),
+              ElevatedButton(onPressed: pickImage, child: const Text('사진 변경')),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
                 value: selectedCategory,
@@ -98,63 +89,35 @@ class _EditClothesPageState extends State<EditClothesPage> {
                   DropdownMenuItem(value: '신발', child: Text('신발')),
                   DropdownMenuItem(value: '모자', child: Text('모자')),
                 ],
-                onChanged: (value) {
-                  setState(() {
-                    selectedCategory = value!;
-                  });
-                },
+                onChanged: (value) => setState(() => selectedCategory = value!),
               ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: brandController,
                 decoration: const InputDecoration(labelText: '브랜드'),
-                onChanged: (value) {
-                  selectedBrand = value;
-                },
+                onChanged: (value) => selectedBrand = value,
               ),
               const SizedBox(height: 16),
               ColorSelector(
                 selectedColor: selectedColor,
-                onColorSelected: (color) {
-                  setState(() {
-                    selectedColor = color;
-                  });
-                },
+                onColorSelected: (color) => setState(() => selectedColor = color),
               ),
               const SizedBox(height: 20),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '계절',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 children: ['봄', '여름', '가을', '겨울']
-                    .map((season) {
-                      return FilterChip(
-                        label: Text(season),
-                        selected: selectedSeasons.contains(season),
-                        onSelected: (selected) {
-                          setState(() {
-                            if (selected) {
-                              selectedSeasons.add(season);
-                            } else {
-                              selectedSeasons.remove(season);
-                            }
-                          });
-                        },
-                      );
-                    })
+                    .map((season) => FilterChip(
+                          label: Text(season),
+                          selected: selectedSeasons.contains(season),
+                          onSelected: (selected) => setState(() {
+                            if (selected) selectedSeasons.add(season);
+                            else selectedSeasons.remove(season);
+                          }),
+                        ))
                     .toList(),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: updateClothes,
-                child: const Text('저장'),
-              ),
+              ElevatedButton(onPressed: updateClothes, child: const Text('저장')),
             ],
           ),
         ),
