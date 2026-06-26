@@ -1,6 +1,7 @@
 class Profile {
   final String id;
   final String username;
+  final String gender;
   final String bodyType;
   final int? height;
   final int? weight;
@@ -12,6 +13,7 @@ class Profile {
   Profile({
     required this.id,
     required this.username,
+    required this.gender,
     required this.bodyType,
     this.height,
     this.weight,
@@ -30,6 +32,7 @@ class Profile {
     return Profile(
       id: json['id'],
       username: (json['username'] ?? 'user').toString(),
+      gender: (json['gender'] ?? '미설정').toString(),
       bodyType: (json['body_type'] ?? '미설정').toString(),
       height: json['height'],
       weight: json['weight'],
@@ -45,6 +48,7 @@ class Profile {
   Map<String, dynamic> toJson() => {
     'id': id,
     'username': username,
+    'gender': gender,
     'body_type': bodyType,
     'height': height,
     'weight': weight,

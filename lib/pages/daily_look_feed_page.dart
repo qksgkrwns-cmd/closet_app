@@ -12,6 +12,7 @@ class DailyLookFeedPage extends StatefulWidget {
 
 class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
   late Future<List<dynamic>> feedFuture;
+  bool onlySimilarBody = false;
 
   @override
   void initState() {
@@ -21,7 +22,9 @@ class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
 
   void _loadFeed() {
     setState(() {
-      feedFuture = DailyLookService.fetchPublicFeed();
+      feedFuture = DailyLookService.fetchPublicFeed(
+        onlySimilarBody: onlySimilarBody,
+      );
     });
   }
 
@@ -48,7 +51,21 @@ class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('피드')),
+      appBar: AppBar(
+        title: const Text('피드'),
+        actions: [
+          TextButton.icon(
+            onPressed: () {
+              setState(() => onlySimilarBody = !onlySimilarBody);
+              _loadFeed();
+            },
+            icon: Icon(
+              onlySimilarBody ? Icons.tune : Icons.tune_outlined,
+            ),
+            label: Text(onlySimilarBody ? '유사체형 ON' : '유사체형 OFF'),
+          ),
+        ],
+      ),
       body: FutureBuilder<List<dynamic>>(
         future: feedFuture,
         builder: (context, snapshot) {
@@ -58,7 +75,17 @@ class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
 
           final feed = snapshot.data ?? [];
           if (feed.isEmpty) {
-            return const Center(child: Text('표시할 공개 피드가 없습니다.'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  onlySimilarBody
+                      ? '조건에 맞는 피드가 없습니다.\n유사체형 필터를 끄거나 프로필 정보를 확인해주세요.'
+                      : '표시할 공개 피드가 없습니다.\n프로필에서 성별을 먼저 설정해주세요.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
           return RefreshIndicator(
@@ -72,7 +99,7 @@ class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
                 if (lookId == null) return const SizedBox.shrink();
 
                 final content = (look['content'] ?? '').toString();
-                final username = (look['profile_username'] ?? '사용자').toString();
+                final uploaderName = (look['uploader_name'] ?? look['profile_username'] ?? '사용자').toString();
                 final hashtags = _hashtags(look['hashtags']);
                 final dateText = _formatDate(look['wear_date'] ?? look['created_at']);
 
@@ -98,7 +125,7 @@ class _DailyLookFeedPageState extends State<DailyLookFeedPage> {
                             backgroundColor: Colors.grey.shade300,
                             child: const Icon(Icons.person, color: Colors.black54),
                           ),
-                          title: Text('@$username', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          title: Text(uploaderName, style: const TextStyle(fontWeight: FontWeight.w700)),
                           subtitle: Text(dateText),
                         ),
                         if (look['image_url'] != null)

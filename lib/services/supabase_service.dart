@@ -13,7 +13,8 @@ class SupabaseService {
         normalizedCategory == '전체';
 
     if (!isAllCategory) {
-      query = query.eq('category', normalizedCategory);
+      // 대분류로 필터링 (예: "상의"를 선택하면 "상의", "상의/반팔티" 등 모두 포함)
+      query = query.filter('category', 'like', '$normalizedCategory%');
     }
 
     // 기본: 현재 로그인된 사용자의 옷만 반환 (내 옷장)
@@ -40,6 +41,7 @@ class SupabaseService {
     required String brand,
     required String color,
     required List<String> seasons,
+    String? size,
     DateTime? purchaseDate,
     int? purchasePrice,
     String? comment,
@@ -72,6 +74,7 @@ class SupabaseService {
       'brand': brand,
       'color': color,
       'seasons': seasons,
+      'size': size?.trim().isEmpty == true ? null : size?.trim(),
       'image_url': imageUrl,
       'purchase_date': purchaseDate?.toIso8601String(),
       'purchase_price': purchasePrice,
@@ -95,6 +98,7 @@ class SupabaseService {
     required String brand,
     required String color,
     required List<String> seasons,
+    String? size,
     DateTime? purchaseDate,
     int? purchasePrice,
     String? comment,
@@ -117,6 +121,7 @@ class SupabaseService {
       'brand': brand,
       'color': color,
       'seasons': seasons,
+      'size': size?.trim().isEmpty == true ? null : size?.trim(),
       'image_url': imageUrl,
       'purchase_date': purchaseDate?.toIso8601String(),
       'purchase_price': purchasePrice,
@@ -265,6 +270,14 @@ class SupabaseService {
   static Future<void> bookmarkClothes(int clothesId) async {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) throw Exception('로그인이 필요합니다.');
+    final alreadySaved = await _supabase
+        .from('saved_clothes')
+        .select('id')
+        .eq('clothes_id', clothesId)
+        .eq('user_id', userId)
+        .limit(1);
+    if ((alreadySaved as List).isNotEmpty) return;
+
     await _supabase.from('saved_clothes').insert({
       'clothes_id': clothesId,
       'user_id': userId,

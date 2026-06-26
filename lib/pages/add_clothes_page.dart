@@ -13,13 +13,24 @@ class AddClothesPage extends StatefulWidget {
 }
 
 class _AddClothesPageState extends State<AddClothesPage> {
+  static const Map<String, List<String>> categoryHierarchy = {
+    '상의': ['상의', '반팔티', '긴팔티', '셔츠', '후드', '니트'],
+    '하의': ['하의', '청바지', '면바지', '트레이닝', '치마'],
+    '아우터': ['아우터', '자켓', '코트', '점퍼'],
+    '신발': ['신발', '스니커즈', '로퍼', '구두'],
+    '모자': ['모자', '야구모', '비니'],
+    '잡동사니': ['잡동사니', '가방', '시계', '목도리', '장갑'],
+  };
+
   File? selectedImage;
   String selectedCategory = '상의';
+  String selectedSubcategory = '상의';
   String selectedColor = '블랙';
   String selectedBrand = '기타';
   List<String> selectedSeasons = [];
   DateTime? purchaseDate;
   final priceController = TextEditingController();
+  final sizeController = TextEditingController();
   final commentController = TextEditingController();
   bool enableAIAnalysis = true;
   final brandController = TextEditingController();
@@ -34,6 +45,7 @@ class _AddClothesPageState extends State<AddClothesPage> {
   void dispose() {
     brandController.dispose();
     priceController.dispose();
+    sizeController.dispose();
     commentController.dispose();
     super.dispose();
   }
@@ -77,8 +89,10 @@ class _AddClothesPageState extends State<AddClothesPage> {
       }
 
       debugPrint('[AI] Raw result: $result');
+      final analyzedCategory = result['category'] ?? '상의';
       setState(() {
-        selectedCategory = result['category'] ?? '상의';
+        selectedCategory = analyzedCategory;
+        selectedSubcategory = analyzedCategory;
         selectedBrand = result['brand'] ?? '기타';
         brandController.text = selectedBrand;
         selectedColor = normalizeColorLabel(result['color']?.toString());
@@ -99,11 +113,16 @@ class _AddClothesPageState extends State<AddClothesPage> {
 
   Future<void> saveClothes() async {
     try {
+      // 대분류와 소분류를 합쳐서 저장 (예: "상의/반팔티")
+      final categoryToSave = selectedSubcategory == selectedCategory
+          ? selectedCategory
+          : '$selectedCategory/$selectedSubcategory';
       await SupabaseService.saveClothes(
-        category: selectedCategory,
+        category: categoryToSave,
         brand: selectedBrand,
         color: selectedColor,
         seasons: selectedSeasons,
+        size: sizeController.text,
         purchaseDate: purchaseDate,
         purchasePrice: int.tryParse(priceController.text.trim()),
         comment: commentController.text,
@@ -139,19 +158,33 @@ class _AddClothesPageState extends State<AddClothesPage> {
               if (selectedImage != null) Image.file(selectedImage!, height: 200),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: '카테고리 (대분류)'),
                 value: selectedCategory,
-                items: const [
-                  DropdownMenuItem(value: '상의', child: Text('상의')),
-                  DropdownMenuItem(value: '하의', child: Text('하의')),
-                  DropdownMenuItem(value: '아우터', child: Text('아우터')),
-                  DropdownMenuItem(value: '신발', child: Text('신발')),
-                  DropdownMenuItem(value: '모자', child: Text('모자')),
-                ],
-                onChanged: (value) => setState(() => selectedCategory = value!),
+                items: categoryHierarchy.keys
+                    .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
+                    .toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      selectedCategory = value;
+                      selectedSubcategory = categoryHierarchy[value]![0];
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: '카테고리 (세부)'),
+                value: selectedSubcategory,
+                items: (categoryHierarchy[selectedCategory] ?? [])
+                    .map((sub) => DropdownMenuItem(value: sub, child: Text(sub)))
+                    .toList(),
+                onChanged: (value) => setState(() => selectedSubcategory = value!),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: brandController,
+                decoration: const InputDecoration(labelText: '브랜드'),
                 onChanged: (value) => selectedBrand = value,
               ),
               const SizedBox(height: 12),
@@ -182,6 +215,11 @@ class _AddClothesPageState extends State<AddClothesPage> {
                 controller: priceController,
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: '구입 가격 (선택)'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: sizeController,
+                decoration: const InputDecoration(labelText: '사이즈 (선택, 예: M / 270)'),
               ),
               const SizedBox(height: 12),
               TextFormField(

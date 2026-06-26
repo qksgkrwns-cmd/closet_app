@@ -16,6 +16,7 @@ class DailyLookCalendarPage extends StatefulWidget {
 class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
   DateTime selectedDate = DateTime.now();
   DateTime focusedDate = DateTime.now();
+  CalendarFormat calendarFormat = CalendarFormat.month;
   Future<List<dynamic>>? looksFuture;
   Map<String, Map<String, dynamic>> lookByDate = {};
 
@@ -145,6 +146,16 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
             firstDay: DateTime(2020, 1, 1),
             lastDay: DateTime(2100, 12, 31),
             focusedDay: focusedDate,
+            availableCalendarFormats: const {
+              CalendarFormat.month: 'Month',
+              CalendarFormat.twoWeeks: '2 weeks',
+            },
+            calendarFormat: calendarFormat,
+            onFormatChanged: (format) {
+              if (calendarFormat != format) {
+                setState(() => calendarFormat = format);
+              }
+            },
             selectedDayPredicate: (day) => isSameDay(day, selectedDate),
             onDaySelected: (selected, focused) {
               selectedDate = selected;
@@ -266,6 +277,7 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                 }
 
                 return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 96),
                   itemCount: looks.length,
                   itemBuilder: (context, index) {
                     final look = looks[index] as Map<String, dynamic>;

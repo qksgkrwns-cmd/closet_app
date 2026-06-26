@@ -58,6 +58,8 @@ class _ProfilePageState extends State<ProfilePage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Text('성별: ${profile.gender}'),
+                          const SizedBox(height: 8),
                           Text('체형: ${profile.bodyType}'),
                           const SizedBox(height: 8),
                           Text('키: ${profile.height}cm'),

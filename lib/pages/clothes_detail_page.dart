@@ -31,7 +31,20 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
     item = Map<String, dynamic>.from(widget.item);
     if (widget.isReadOnly) {
       _loadSocialState();
+    } else {
+      _loadBookmarkStateForOwnerView();
     }
+  }
+
+  Future<void> _loadBookmarkStateForOwnerView() async {
+    final id = item['id'];
+    final parsedId = id is int ? id : int.tryParse(id?.toString() ?? '');
+    if (parsedId == null) return;
+    try {
+      final bookmarked = await SupabaseService.isClothesBookmarked(parsedId);
+      if (!mounted) return;
+      setState(() => isBookmarked = bookmarked);
+    } catch (_) {}
   }
 
   Future<void> _loadSocialState() async {
@@ -56,16 +69,17 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
 
   Future<void> toggleLike() async {
     final id = item['id'];
-    if (id is! int) return;
+    final parsedId = id is int ? id : int.tryParse(id?.toString() ?? '');
+    if (parsedId == null) return;
     try {
       if (isLiked) {
-        await SupabaseService.unlikeClothes(id);
+        await SupabaseService.unlikeClothes(parsedId);
         setState(() {
           isLiked = false;
           likesCount = likesCount > 0 ? likesCount - 1 : 0;
         });
       } else {
-        await SupabaseService.likeClothes(id);
+        await SupabaseService.likeClothes(parsedId);
         setState(() {
           isLiked = true;
           likesCount += 1;
@@ -81,13 +95,14 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
 
   Future<void> toggleBookmark() async {
     final id = item['id'];
-    if (id is! int) return;
+    final parsedId = id is int ? id : int.tryParse(id?.toString() ?? '');
+    if (parsedId == null) return;
     try {
       if (isBookmarked) {
-        await SupabaseService.unbookmarkClothes(id);
+        await SupabaseService.unbookmarkClothes(parsedId);
         setState(() => isBookmarked = false);
       } else {
-        await SupabaseService.bookmarkClothes(id);
+        await SupabaseService.bookmarkClothes(parsedId);
         setState(() => isBookmarked = true);
       }
     } catch (e) {
@@ -114,7 +129,8 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
 
   Future<void> incrementWearCount() async {
     final id = item['id'];
-    if (id is! int) return;
+    final parsedId = id is int ? id : int.tryParse(id?.toString() ?? '');
+    if (parsedId == null) return;
 
     final current = (item['wear_count'] is num)
         ? (item['wear_count'] as num).toInt()
@@ -123,7 +139,7 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
     setState(() => isUpdatingWearCount = true);
     try {
       final next = await SupabaseService.incrementWearCount(
-        id: id,
+        id: parsedId,
         currentWearCount: current,
       );
 
@@ -174,13 +190,43 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    item['image_url'],
-                    height: 300,
-                    fit: BoxFit.cover,
-                  ),
+                child: Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        item['image_url'],
+                        height: 300,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 10,
+                      right: 10,
+                      child: GestureDetector(
+                        onTap: toggleBookmark,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          padding: const EdgeInsets.all(8),
+                          child: Icon(
+                            isBookmarked ? Icons.favorite : Icons.favorite_border,
+                            color: isBookmarked ? Colors.red : Colors.grey.shade600,
+                            size: 24,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),
@@ -269,6 +315,8 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
                       Text('구입 시기 : ${_formatDate(item['purchase_date']?.toString())}'),
                       const SizedBox(height: 8),
                       Text('구입 가격 : ${_formatPrice(item['purchase_price'])}'),
+                      const SizedBox(height: 8),
+                      Text('사이즈 : ${(item['size']?.toString().trim().isEmpty ?? true) ? '미입력' : item['size']}'),
                       const SizedBox(height: 8),
                       Text('메모 : ${(item['comment']?.toString().trim().isEmpty ?? true) ? '미입력' : item['comment']}'),
                     ],

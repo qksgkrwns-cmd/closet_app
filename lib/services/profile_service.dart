@@ -31,6 +31,7 @@ class ProfileService {
     final defaultProfile = Profile(
       id: user.id,
       username: user.email?.split('@').first ?? 'user_${user.id.substring(0, 6)}',
+      gender: '미설정',
       bodyType: '미설정',
       skinTone: '미설정',
       stylePreferences: const [],
@@ -42,6 +43,7 @@ class ProfileService {
 
   static bool isProfileComplete(Profile? profile) {
     if (profile == null) return false;
+    if (profile.gender == '미설정') return false;
     if (profile.bodyType == '미설정' || profile.skinTone == '미설정') return false;
     return profile.stylePreferences.isNotEmpty;
   }

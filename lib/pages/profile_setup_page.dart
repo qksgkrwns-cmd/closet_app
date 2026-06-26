@@ -12,7 +12,8 @@ class ProfileSetupPage extends StatefulWidget {
 }
 
 class _ProfileSetupPageState extends State<ProfileSetupPage> {
-  String selectedBodyType = '보통 체형';
+  String selectedGender = '미설정';
+  String selectedBodyType = '보통';
   String selectedSkinTone = '중간색';
   List<String> selectedStyles = [];
   final heightController = TextEditingController();
@@ -21,6 +22,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   bool isLoading = false;
 
   final bodyTypes = ['마른', '보통', '통통', '상체발달', '하체발달', '근육'];
+  final genders = ['남성', '여성'];
   final skinTones = ['밝은색', '중간색', '어두운색'];
   final styles = ['캐주얼', '시크', '스포츠', '우아함', '펑키', '미니멀'];
 
@@ -40,6 +42,10 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
 
     setState(() {
       usernameController.text = profile.username;
+
+      if (genders.contains(profile.gender)) {
+        selectedGender = profile.gender;
+      }
 
       if (bodyTypes.contains(profile.bodyType)) {
         selectedBodyType = profile.bodyType;
@@ -65,6 +71,12 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       );
       return;
     }
+    if (selectedGender == '미설정') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('성별을 선택해주세요.')),
+      );
+      return;
+    }
 
     setState(() => isLoading = true);
     try {
@@ -74,6 +86,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       final profile = Profile(
         id: user.id,
         username: usernameController.text,
+        gender: selectedGender,
         bodyType: selectedBodyType,
         height: int.tryParse(heightController.text),
         weight: int.tryParse(weightController.text),
@@ -114,6 +127,17 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const Text('성별 (필수)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                children: genders.map((gender) => ChoiceChip(
+                  label: Text(gender),
+                  selected: selectedGender == gender,
+                  onSelected: (_) => setState(() => selectedGender = gender),
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
               TextField(
                 controller: usernameController,
                 decoration: const InputDecoration(labelText: '사용자 이름'),
