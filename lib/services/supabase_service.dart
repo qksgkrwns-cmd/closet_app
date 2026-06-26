@@ -296,4 +296,13 @@ class SupabaseService {
         .where((row) => row != null)
         .toList();
   }
+
+  static Future<List<dynamic>> fetchClothesByIds(List<int> ids) async {
+    if (ids.isEmpty) return [];
+    return await _supabase
+        .from('clothes')
+        .select()
+        .inFilter('id', ids)
+        .order('created_at', ascending: false);
+  }
 }

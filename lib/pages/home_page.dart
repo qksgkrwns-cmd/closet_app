@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/profile_service.dart';
 import '../services/supabase_service.dart';
 import 'add_clothes_page.dart';
 import 'clothes_detail_page.dart';
 import 'profile_setup_page.dart';
-import 'similar_users_page.dart';
 import 'saved_outfits_page.dart';
+import 'daily_look_calendar_page.dart';
+import 'daily_look_feed_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -25,61 +25,6 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     loadClothes();
-  }
-
-  Future<void> _onTapSimilarUsers() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('로그인이 필요합니다.')),
-      );
-      return;
-    }
-
-    final profile = await ProfileService.getCurrentProfile();
-    final isComplete = ProfileService.isProfileComplete(profile);
-
-    if (!isComplete) {
-      if (!mounted) return;
-      final shouldSetup = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('프로필 보완'),
-          content: const Text('비슷한 사람 추천을 위해 체형/피부톤/스타일 정보를 입력해주세요.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('나중에'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('지금 입력'),
-            ),
-          ],
-        ),
-      );
-
-      if (shouldSetup != true || !mounted) return;
-
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const ProfileSetupPage(),
-        ),
-      );
-
-      final refreshed = await ProfileService.getCurrentProfile();
-      if (!ProfileService.isProfileComplete(refreshed) || !mounted) return;
-    }
-
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const SimilarUsersPage(),
-      ),
-    );
   }
 
   Future<void> loadClothes() async {
@@ -286,16 +231,33 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.white,
+        selectedItemColor: Colors.black87,
+        unselectedItemColor: Colors.grey,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: '옷장'),
-          BottomNavigationBarItem(icon: Icon(Icons.group), label: '비슷한 사람'),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: '데일리룩'),
+          BottomNavigationBarItem(icon: Icon(Icons.dynamic_feed), label: '피드'),
           BottomNavigationBarItem(icon: Icon(Icons.bookmark), label: '저장됨'),
         ],
         onTap: (index) {
           setState(() => _selectedIndex = index);
           if (index == 1) {
-            _onTapSimilarUsers();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const DailyLookCalendarPage(),
+              ),
+            );
           } else if (index == 2) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const DailyLookFeedPage(),
+              ),
+            );
+          } else if (index == 3) {
             Navigator.push(
               context,
               MaterialPageRoute(
