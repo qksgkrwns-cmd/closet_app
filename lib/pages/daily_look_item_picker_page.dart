@@ -3,12 +3,14 @@ import 'package:flutter/material.dart';
 import '../services/supabase_service.dart';
 
 class DailyLookItemPickerPage extends StatefulWidget {
-  final String category;
+  final String categoryLabel;
+  final String slotKey;
   final int? selectedItemId;
 
   const DailyLookItemPickerPage({
     super.key,
-    required this.category,
+    required this.categoryLabel,
+    required this.slotKey,
     this.selectedItemId,
   });
 
@@ -38,12 +40,41 @@ class _DailyLookItemPickerPageState extends State<DailyLookItemPickerPage> {
   }
 
   Future<void> _loadItems() async {
-    final data = await SupabaseService.fetchClothes(category: widget.category);
+    final data = await SupabaseService.fetchClothes();
+    final mapped = data.map((e) => Map<String, dynamic>.from(e)).toList();
+    final filteredBySlot = mapped.where(_matchesSlot).toList();
     if (!mounted) return;
     setState(() {
-      items = data;
+      items = filteredBySlot;
       isLoading = false;
     });
+  }
+
+  bool _matchesSlot(Map<String, dynamic> item) {
+    final fullCategory = (item['category'] ?? '').toString();
+    final split = fullCategory.split('/');
+    final parent = split.isNotEmpty ? split.first : fullCategory;
+    final sub = split.length > 1 ? split[1] : '';
+
+    switch (widget.slotKey) {
+      case 'top_item_id':
+        return parent == '상의';
+      case 'bottom_item_id':
+        return parent == '하의';
+      case 'outer_item_id':
+        return parent == '아우터';
+      case 'shoes_item_id':
+        return parent == '신발';
+      case 'hat_item_id':
+        return parent == '모자';
+      case 'bag_item_id':
+        return (parent == '잡동사니' && sub == '가방') || fullCategory == '가방';
+      case 'accessory_item_id':
+        if (parent != '잡동사니') return false;
+        return sub != '가방';
+      default:
+        return true;
+    }
   }
 
   List<dynamic> get filteredItems {
@@ -120,7 +151,7 @@ class _DailyLookItemPickerPageState extends State<DailyLookItemPickerPage> {
   Widget build(BuildContext context) {
     final visibleItems = filteredItems;
     return Scaffold(
-      appBar: AppBar(title: Text('${widget.category} 선택')),
+      appBar: AppBar(title: Text('${widget.categoryLabel} 선택')),
       body: Column(
         children: [
           Padding(
@@ -148,7 +179,7 @@ class _DailyLookItemPickerPageState extends State<DailyLookItemPickerPage> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
                 ChoiceChip(
-                  label: Text(widget.category),
+                  label: Text(widget.categoryLabel),
                   selected: true,
                   onSelected: (_) {},
                 ),

@@ -12,10 +12,11 @@ const List<String> kSupportedColors = [
   '레드',
   '그린',
   '믹스',
+  'Other',
 ];
 
 String normalizeColorLabel(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return '블랙';
+  if (raw == null || raw.trim().isEmpty) return 'Other';
 
   final value = raw.toLowerCase().replaceAll(' ', '');
 
@@ -53,11 +54,20 @@ String normalizeColorLabel(String? raw) {
     return '믹스';
   }
 
-  return '블랙';
+  if (value.contains('other') ||
+      value.contains('기타') ||
+      value.contains('etc') ||
+      value.contains('unknown') ||
+      value == 'na' ||
+      value == 'n/a') {
+    return 'Other';
+  }
+
+  return 'Other';
 }
 
 class ColorSelector extends StatelessWidget {
-  final String selectedColor;
+  final String? selectedColor;
   final Function(String) onColorSelected;
 
   const ColorSelector({
@@ -79,7 +89,14 @@ class ColorSelector extends StatelessWidget {
               .map((color) => ChoiceChip(
                     label: Text(color),
                     selected: selectedColor == color,
+                    showCheckmark: true,
                     onSelected: (_) => onColorSelected(color),
+                    side: BorderSide(
+                      color: selectedColor == color
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.outlineVariant,
+                      width: selectedColor == color ? 1.4 : 1,
+                    ),
                   ))
               .toList(),
         ),

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image/image.dart' as img;
 
 class SupabaseService {
   static final _supabase = Supabase.instance.client;
@@ -157,9 +158,24 @@ class SupabaseService {
   }
 
   static Future<String> uploadImage(File imageFile, {required String userId}) async {
+    final bytes = await imageFile.readAsBytes();
+    final decoded = img.decodeImage(bytes);
+    final processed = decoded == null
+        ? bytes
+        : img.encodeJpg(
+            img.copyResize(
+              img.bakeOrientation(decoded),
+              width: decoded.width > 960 ? 960 : decoded.width,
+            ),
+            quality: 70,
+          );
     final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
     final objectPath = '$userId/$fileName';
-    await _supabase.storage.from('clothes').upload(objectPath, imageFile);
+    await _supabase.storage.from('clothes').uploadBinary(
+          objectPath,
+          processed,
+          fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: false),
+        );
     return _supabase.storage.from('clothes').getPublicUrl(objectPath);
   }
 

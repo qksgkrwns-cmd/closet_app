@@ -235,20 +235,19 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
                   children: [
                     Expanded(
                       child: Text(
-                        '누적 착용횟수 : ${((item['wear_count'] is num) ? (item['wear_count'] as num).toInt() : int.tryParse(item['wear_count']?.toString() ?? '0') ?? 0)}회',
+                        '${((item['wear_count'] is num) ? (item['wear_count'] as num).toInt() : int.tryParse(item['wear_count']?.toString() ?? '0') ?? 0)}회 착용',
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    FilledButton.icon(
+                    FilledButton(
                       onPressed: isUpdatingWearCount ? null : incrementWearCount,
-                      icon: isUpdatingWearCount
+                      child: isUpdatingWearCount
                           ? const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.add),
-                      label: const Text('착용 +1'),
+                          : const Text('+1'),
                     ),
                   ],
                 )
@@ -318,7 +317,7 @@ class _ClothesDetailPageState extends State<ClothesDetailPage> {
                       const SizedBox(height: 8),
                       Text('사이즈 : ${(item['size']?.toString().trim().isEmpty ?? true) ? '미입력' : item['size']}'),
                       const SizedBox(height: 8),
-                      Text('메모 : ${(item['comment']?.toString().trim().isEmpty ?? true) ? '미입력' : item['comment']}'),
+                      Text('메모 : ${(item['comment']?.toString().trim().isEmpty ?? true) ? '' : item['comment']}'),
                     ],
                   ),
                 ),

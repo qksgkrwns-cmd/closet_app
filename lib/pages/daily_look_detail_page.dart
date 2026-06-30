@@ -3,16 +3,19 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/daily_look_service.dart';
 import '../services/supabase_service.dart';
+import '../widgets/app_network_image.dart';
 import 'clothes_detail_page.dart';
 import 'daily_look_editor_page.dart';
 import 'user_closet_page.dart';
 
 class DailyLookDetailPage extends StatefulWidget {
   final Map<String, dynamic> look;
+  final bool showAccountLink;
 
   const DailyLookDetailPage({
     super.key,
     required this.look,
+    this.showAccountLink = true,
   });
 
   @override
@@ -22,6 +25,7 @@ class DailyLookDetailPage extends StatefulWidget {
 class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
   late Map<String, dynamic> look;
   final Map<int, Map<String, dynamic>> linkedItems = {};
+  bool hasChanges = false;
 
   int likes = 0;
   int dislikes = 0;
@@ -32,6 +36,7 @@ class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
   final List<Map<String, String>> itemConfig = const [
     {'label': '상의', 'key': 'top_item_id'},
     {'label': '하의', 'key': 'bottom_item_id'},
+    {'label': '아우터', 'key': 'outer_item_id'},
     {'label': '신발', 'key': 'shoes_item_id'},
     {'label': '모자', 'key': 'hat_item_id'},
     {'label': '가방', 'key': 'bag_item_id'},
@@ -126,11 +131,17 @@ class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
 
     look = await DailyLookService.fetchLookById(id.toInt());
     await _loadAll();
+    hasChanges = true;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('수정되었습니다.')),
       );
     }
+  }
+
+  Future<bool> _onWillPop() async {
+    Navigator.pop(context, hasChanges);
+    return false;
   }
 
   Widget _buildLinkedItemCard(String label, Map<String, dynamic>? item) {
@@ -156,12 +167,11 @@ class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
-                child: item?['image_url'] != null
-                    ? Image.network(item!['image_url'], fit: BoxFit.cover)
-                    : Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.checkroom),
-                      ),
+                child: AppNetworkImage(
+                  imageUrl: item?['image_url']?.toString(),
+                  fit: BoxFit.cover,
+                  fallbackIcon: Icons.checkroom,
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
@@ -197,54 +207,65 @@ class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
         .map((e) => e.toString())
         .join(' ');
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('데일리 코디'),
-        actions: [
-          if (isOwnLook)
-            IconButton(
-              onPressed: _editLook,
-              icon: const Icon(Icons.edit),
-            ),
-        ],
-      ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  InkWell(
-                    onTap: () {
-                      final userId = look['user_id']?.toString();
-                      if (userId == null || userId.isEmpty) return;
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => UserClosetPage(
-                            userId: userId,
-                            userName: (look['profile_username'] ?? '사용자').toString(),
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.pop(context, hasChanges),
+          ),
+          title: const Text('데일리 코디'),
+          actions: [
+            if (isOwnLook)
+              IconButton(
+                onPressed: _editLook,
+                icon: const Icon(Icons.edit),
+              ),
+          ],
+        ),
+        body: loading
+            ? const Center(child: CircularProgressIndicator())
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                  if (widget.showAccountLink) ...[
+                    InkWell(
+                      onTap: () {
+                        final userId = look['user_id']?.toString();
+                        if (userId == null || userId.isEmpty) return;
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => UserClosetPage(
+                              userId: userId,
+                              userName: (look['profile_username'] ?? '사용자').toString(),
+                            ),
                           ),
+                        );
+                      },
+                      child: Text(
+                        '@${(look['profile_username'] ?? '사용자').toString()} · 계정 보기',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontWeight: FontWeight.w600,
                         ),
-                      );
-                    },
-                    child: Text(
-                      '@${(look['profile_username'] ?? '사용자').toString()} · 계정 보기',
-                      style: TextStyle(
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
                   if (look['image_url'] != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        look['image_url'],
+                    Align(
+                      alignment: Alignment.center,
+                      child: SizedBox(
                         height: 280,
-                        fit: BoxFit.cover,
+                        child: AppNetworkImage(
+                          imageUrl: look['image_url']?.toString(),
+                          fit: BoxFit.contain,
+                          fallbackIcon: Icons.image_not_supported,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 12),
@@ -304,9 +325,10 @@ class _DailyLookDetailPageState extends State<DailyLookDetailPage> {
                       },
                     ),
                   ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }

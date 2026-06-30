@@ -20,6 +20,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   final weightController = TextEditingController();
   final usernameController = TextEditingController();
   bool isLoading = false;
+  bool _submitted = false;
 
   final bodyTypes = ['마른', '보통', '통통', '상체발달', '하체발달', '근육'];
   final genders = ['남성', '여성'];
@@ -65,6 +66,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
   }
 
   Future<void> saveProfile() async {
+    setState(() => _submitted = true);
     if (usernameController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('사용자 이름을 입력해주세요.')),
@@ -96,7 +98,12 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       );
 
       await ProfileService.saveProfile(profile);
-      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('프로필이 저장되었습니다.')),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       debugPrint('Profile save error: $e');
       if (mounted) {
@@ -123,7 +130,7 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
       appBar: AppBar(title: const Text('프로필 설정')),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -137,11 +144,27 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                   onSelected: (_) => setState(() => selectedGender = gender),
                 )).toList(),
               ),
+              if (_submitted && selectedGender == '미설정')
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '성별을 선택해주세요.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  ),
+                ),
               const SizedBox(height: 20),
               TextField(
                 controller: usernameController,
                 decoration: const InputDecoration(labelText: '사용자 이름'),
               ),
+              if (_submitted && usernameController.text.trim().isEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '사용자 이름을 입력해주세요.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  ),
+                ),
               const SizedBox(height: 20),
               const Text('체형', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
@@ -188,16 +211,22 @@ class _ProfileSetupPageState extends State<ProfileSetupPage> {
                   }),
                 )).toList(),
               ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: isLoading ? null : saveProfile,
-                child: isLoading ? const SizedBox(
-                  height: 20, width: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ) : const Text('저장'),
-              ),
             ],
           ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: FilledButton(
+          onPressed: isLoading ? null : saveProfile,
+          child: isLoading
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('저장'),
         ),
       ),
     );

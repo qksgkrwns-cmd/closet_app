@@ -18,12 +18,12 @@ class EditClothesPage extends StatefulWidget {
 
 class _EditClothesPageState extends State<EditClothesPage> {
   static const Map<String, List<String>> categoryHierarchy = {
-    '상의': ['상의', '반팔티', '긴팔티', '셔츠', '후드', '니트'],
-    '하의': ['하의', '청바지', '면바지', '트레이닝', '치마'],
-    '아우터': ['아우터', '자켓', '코트', '점퍼'],
-    '신발': ['신발', '스니커즈', '로퍼', '구두'],
-    '모자': ['모자', '야구모', '비니'],
-    '잡동사니': ['잡동사니', '가방', '시계', '목도리', '장갑'],
+    '상의': ['반팔티', '긴팔티', '셔츠', '맨투맨', '후드', '니트', '블라우스'],
+    '하의': ['청바지', '슬랙스', '면바지', '반바지', '치마', '트레이닝', '레깅스'],
+    '아우터': ['자켓', '코트', '패딩', '가디건', '점퍼', '바람막이', '베스트'],
+    '신발': ['스니커즈', '로퍼', '구두', '샌들', '부츠', '슬리퍼', '런닝화'],
+    '모자': ['볼캡', '버킷햇', '비니', '베레모', '페도라', '썬캡', '니트모자'],
+    '잡동사니': ['가방', '시계', '목도리', '장갑', '벨트', '양말', '선글라스'],
   };
 
   late String selectedCategory;
@@ -38,6 +38,12 @@ class _EditClothesPageState extends State<EditClothesPage> {
   final sizeController = TextEditingController();
   final commentController = TextEditingController();
   File? selectedImage;
+  bool _isSaving = false;
+
+  String _purchaseDateText() {
+    if (purchaseDate == null) return '미입력';
+    return '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   void initState() {
@@ -52,7 +58,7 @@ class _EditClothesPageState extends State<EditClothesPage> {
     } else {
       // 기존 데이터 ("상의" 형태) 호환성 유지
       selectedCategory = fullCategory;
-      selectedSubcategory = categoryHierarchy[fullCategory]?[0] ?? fullCategory;
+      selectedSubcategory = categoryHierarchy[fullCategory]?.first ?? fullCategory;
     }
     
     selectedBrand = widget.item['brand'] ?? '기타';
@@ -79,11 +85,21 @@ class _EditClothesPageState extends State<EditClothesPage> {
 
   Future<void> pickPurchaseDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showDialog<DateTime>(
       context: context,
-      initialDate: purchaseDate ?? now,
-      firstDate: DateTime(2000),
-      lastDate: now,
+      builder: (context) {
+        return Dialog(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: CalendarDatePicker(
+              initialDate: purchaseDate ?? now,
+              firstDate: DateTime(2000),
+              lastDate: now,
+              onDateChanged: (date) => Navigator.pop(context, date),
+            ),
+          ),
+        );
+      },
     );
 
     if (picked != null) {
@@ -102,25 +118,37 @@ class _EditClothesPageState extends State<EditClothesPage> {
   }
 
   Future<void> updateClothes() async {
+    setState(() => _isSaving = true);
     // 대분류와 소분류를 합쳐서 저장 (예: "상의/반팔티")
     final categoryToSave = selectedSubcategory == selectedCategory
         ? selectedCategory
         : '$selectedCategory/$selectedSubcategory';
-    
-    await SupabaseService.updateClothes(
-      id: widget.item['id'],
-      category: categoryToSave,
-      brand: selectedBrand,
-      color: selectedColor,
-      seasons: selectedSeasons,
-      size: sizeController.text,
-      purchaseDate: purchaseDate,
-      purchasePrice: int.tryParse(priceController.text.trim()),
-      comment: commentController.text,
-      newImageFile: selectedImage,
-      oldImageUrl: widget.item['image_url'],
-    );
-    if (mounted) Navigator.pop(context, true);
+
+    try {
+      await SupabaseService.updateClothes(
+        id: widget.item['id'],
+        category: categoryToSave,
+        brand: selectedBrand,
+        color: selectedColor,
+        seasons: selectedSeasons,
+        size: sizeController.text,
+        purchaseDate: purchaseDate,
+        purchasePrice: int.tryParse(priceController.text.trim()),
+        comment: commentController.text,
+        newImageFile: selectedImage,
+        oldImageUrl: widget.item['image_url'],
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('수정되었습니다.')),
+        );
+        Navigator.pop(context, true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
   }
 
   @override
@@ -129,7 +157,7 @@ class _EditClothesPageState extends State<EditClothesPage> {
       appBar: AppBar(title: const Text('옷 수정')),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
           child: Column(
             children: [
               if (selectedImage != null)
@@ -149,7 +177,7 @@ class _EditClothesPageState extends State<EditClothesPage> {
                   if (value != null) {
                     setState(() {
                       selectedCategory = value;
-                      selectedSubcategory = categoryHierarchy[value]![0];
+                      selectedSubcategory = categoryHierarchy[value]!.first;
                     });
                   }
                 },
@@ -170,45 +198,56 @@ class _EditClothesPageState extends State<EditClothesPage> {
                 onChanged: (value) => selectedBrand = value,
               ),
               const SizedBox(height: 16),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('구입 시기 (선택)'),
-                subtitle: Text(
-                  purchaseDate == null
-                      ? '미입력'
-                      : '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}',
-                ),
-                trailing: Wrap(
-                  spacing: 8,
-                  children: [
-                    if (purchaseDate != null)
-                      IconButton(
-                        onPressed: () => setState(() => purchaseDate = null),
-                        icon: const Icon(Icons.clear),
-                      ),
-                    IconButton(
-                      onPressed: pickPurchaseDate,
-                      icon: const Icon(Icons.calendar_today),
+              InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: pickPurchaseDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: '구입 시기',
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (purchaseDate != null)
+                          IconButton(
+                            tooltip: '구입 시기 초기화',
+                            onPressed: () => setState(() => purchaseDate = null),
+                            icon: const Icon(Icons.clear),
+                          ),
+                        IconButton(
+                          tooltip: '날짜 선택',
+                          onPressed: pickPurchaseDate,
+                          icon: const Icon(Icons.calendar_today),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _purchaseDateText(),
+                      style: TextStyle(
+                        color: purchaseDate == null ? Colors.grey.shade400 : null,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               TextFormField(
                 controller: priceController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '구입 가격 (선택)'),
+                decoration: const InputDecoration(labelText: '구입 가격'),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: sizeController,
-                decoration: const InputDecoration(labelText: '사이즈 (선택, 예: M / 270)'),
+                decoration: const InputDecoration(labelText: '사이즈 (예: M / 270)'),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: commentController,
                 minLines: 2,
                 maxLines: 4,
-                decoration: const InputDecoration(labelText: '메모 (선택)'),
+                decoration: const InputDecoration(labelText: '메모'),
               ),
               const SizedBox(height: 16),
               ColorSelector(
@@ -216,6 +255,14 @@ class _EditClothesPageState extends State<EditClothesPage> {
                 onColorSelected: (color) => setState(() => selectedColor = color),
               ),
               const SizedBox(height: 20),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '계절',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 children: ['봄', '여름', '가을', '겨울']
@@ -229,9 +276,24 @@ class _EditClothesPageState extends State<EditClothesPage> {
                         ))
                     .toList(),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton(onPressed: updateClothes, child: const Text('저장')),
             ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _isSaving ? null : updateClothes,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('저장'),
           ),
         ),
       ),

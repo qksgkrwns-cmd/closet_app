@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/profile_service.dart';
 import '../models/profile.dart';
+import '../widgets/app_network_image.dart';
+import '../widgets/empty_state_view.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -29,7 +31,11 @@ class _ProfilePageState extends State<ProfilePage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData) {
-            return const Center(child: Text('프로필이 없습니다.'));
+            return const EmptyStateView(
+              icon: Icons.person_outline,
+              title: '프로필 정보가 없습니다.',
+              subtitle: '프로필 설정에서 정보를 입력해 주세요.',
+            );
           }
           final profile = snapshot.data!;
           return SingleChildScrollView(
@@ -38,12 +44,16 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  CircleAvatar(
-                    radius: 50,
-                    backgroundImage: profile.avatarUrl != null
-                        ? NetworkImage(profile.avatarUrl!)
-                        : null,
-                    child: profile.avatarUrl == null ? const Icon(Icons.person, size: 50) : null,
+                  SizedBox(
+                    width: 100,
+                    height: 100,
+                    child: ClipOval(
+                      child: AppNetworkImage(
+                        imageUrl: profile.avatarUrl,
+                        fit: BoxFit.cover,
+                        fallbackIcon: Icons.person,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(

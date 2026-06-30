@@ -120,7 +120,22 @@ class DailyLookService {
     return score >= 0.5;
   }
 
-  static Future<List<dynamic>> fetchPublicFeed({bool onlySimilarBody = false}) async {
+  static bool _isStyleSimilar({
+    required List<String> myStyles,
+    required List<String> otherStyles,
+  }) {
+    if (myStyles.isEmpty || otherStyles.isEmpty) return false;
+    final overlap = myStyles.where((s) => otherStyles.contains(s)).length;
+    return overlap > 0;
+  }
+
+  static Future<List<dynamic>> fetchPublicFeed({
+    bool onlySimilarBody = false,
+    bool onlyFollowing = false,
+    bool onlyStyleMatch = false,
+    bool onlyBookmarked = false,
+    String sortBy = 'popular', // 'popular' or 'latest'
+  }) async {
     final myProfile = await ProfileService.getCurrentProfile();
     final myGender = _normalizeGender(myProfile?.gender);
     if (myProfile == null || myGender == '미설정') {
@@ -131,7 +146,7 @@ class DailyLookService {
     try {
       rows = await _supabase
           .from('daily_looks')
-          .select('*, profiles(id, username, gender, body_type, height, weight)')
+          .select('*, profiles(id, username, gender, body_type, height, weight, style_preferences)')
           .eq('is_public', true)
           .order('created_at', ascending: false)
           .limit(300);
@@ -167,7 +182,7 @@ class DailyLookService {
       try {
         final profileRows = await _supabase
             .from('profiles')
-            .select('id, username, gender, body_type, height, weight')
+            .select('id, username, gender, body_type, height, weight, style_preferences')
             .inFilter('id', missingProfileUserIds);
 
         final profileById = <String, Map<String, dynamic>>{};
@@ -195,6 +210,37 @@ class DailyLookService {
       }
     }
 
+    // Get following list
+    final followingList = <String>[];
+    if (onlyFollowing) {
+      try {
+        final following = await _supabase
+            .from('user_follows')
+            .select('following_id')
+            .eq('user_id', _supabase.auth.currentUser?.id ?? '');
+        followingList.addAll((following as List).map((f) => f['following_id'].toString()));
+      } catch (_) {
+        // If following table doesn't exist, just proceed
+      }
+    }
+
+    // Get bookmarked looks
+    final bookmarkedIds = <int>{};
+    if (onlyBookmarked) {
+      try {
+        final bookmarks = await _supabase
+            .from('daily_look_bookmarks')
+            .select('daily_look_id')
+            .eq('user_id', _supabase.auth.currentUser?.id ?? '');
+        bookmarkedIds.addAll((bookmarks as List)
+            .map((b) => b['daily_look_id'])
+            .whereType<num>()
+            .map((e) => e.toInt()));
+      } catch (_) {
+        // Proceed
+      }
+    }
+
     final sameGenderOnly = mappedRows.where((row) {
       final profile = row['profiles'];
       final uploaderId = row['user_id']?.toString();
@@ -210,16 +256,52 @@ class DailyLookService {
       return gender != '미설정' && gender == myGender;
     }).toList();
 
-    final filtered = onlySimilarBody
-        ? sameGenderOnly.where((row) {
-            final profile = row['profiles'];
-            if (profile is! Map) return false;
-            return _isBodySimilar(
-              me: myProfile.toJson(),
-              other: Map<String, dynamic>.from(profile),
-            );
-          }).toList()
-        : sameGenderOnly;
+    var filtered = sameGenderOnly;
+
+    // Apply body similarity filter
+    if (onlySimilarBody) {
+      filtered = filtered.where((row) {
+        final profile = row['profiles'];
+        if (profile is! Map) return false;
+        return _isBodySimilar(
+          me: myProfile.toJson(),
+          other: Map<String, dynamic>.from(profile),
+        );
+      }).toList();
+    }
+
+    // Apply following filter
+    if (onlyFollowing) {
+      filtered = filtered.where((row) {
+        final uploaderId = row['user_id']?.toString();
+        final currentUserId = _supabase.auth.currentUser?.id;
+        // Always include my own posts
+        if (uploaderId == currentUserId) return true;
+        return followingList.contains(uploaderId);
+      }).toList();
+    }
+
+    // Apply style preference filter
+    if (onlyStyleMatch) {
+      filtered = filtered.where((row) {
+        final profile = row['profiles'];
+        if (profile is! Map) return false;
+        final otherStyles = (profile['style_preferences'] as List?)?.map((s) => s.toString()).toList() ?? [];
+        return _isStyleSimilar(
+          myStyles: myProfile.stylePreferences,
+          otherStyles: otherStyles,
+        );
+      }).toList();
+    }
+
+    // Apply bookmarked filter
+    if (onlyBookmarked) {
+      filtered = filtered.where((row) {
+        final rawId = row['id'];
+        final id = rawId is num ? rawId.toInt() : int.tryParse(rawId.toString());
+        return id != null && bookmarkedIds.contains(id);
+      }).toList();
+    }
 
     final lookIds = filtered
         .map((row) => row['id'])
@@ -255,14 +337,41 @@ class DailyLookService {
       bookmarkCounts[id] = (bookmarkCounts[id] ?? 0) + 1;
     }
 
+    final bodySimilarByLookId = <int, bool>{};
+    for (final row in filtered) {
+      final rawId = row['id'];
+      final id = rawId is num ? rawId.toInt() : int.tryParse(rawId.toString());
+      if (id == null) continue;
+      final profile = row['profiles'];
+      if (profile is! Map) {
+        bodySimilarByLookId[id] = false;
+        continue;
+      }
+      bodySimilarByLookId[id] = _isBodySimilar(
+        me: myProfile.toJson(),
+        other: Map<String, dynamic>.from(profile),
+      );
+    }
+
+    // Sort by selection
     filtered.sort((a, b) {
       final aRawId = a['id'];
       final bRawId = b['id'];
       final aId = aRawId is num ? aRawId.toInt() : int.tryParse(aRawId.toString()) ?? 0;
       final bId = bRawId is num ? bRawId.toInt() : int.tryParse(bRawId.toString()) ?? 0;
-      final aScore = (likeCounts[aId] ?? 0) + (bookmarkCounts[aId] ?? 0);
-      final bScore = (likeCounts[bId] ?? 0) + (bookmarkCounts[bId] ?? 0);
-      if (aScore != bScore) return bScore.compareTo(aScore);
+
+      // Highest priority: same body type/similarity first.
+      final aBodySimilar = bodySimilarByLookId[aId] == true;
+      final bBodySimilar = bodySimilarByLookId[bId] == true;
+      if (aBodySimilar != bBodySimilar) {
+        return bBodySimilar ? 1 : -1;
+      }
+
+      if (sortBy == 'popular') {
+        final aScore = (likeCounts[aId] ?? 0) + (bookmarkCounts[aId] ?? 0);
+        final bScore = (likeCounts[bId] ?? 0) + (bookmarkCounts[bId] ?? 0);
+        if (aScore != bScore) return bScore.compareTo(aScore);
+      }
 
       final aCreated = DateTime.tryParse((a['created_at'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
       final bCreated = DateTime.tryParse((b['created_at'] ?? '').toString()) ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -282,6 +391,7 @@ class DailyLookService {
     String? oldImageUrl,
     int? topItemId,
     int? bottomItemId,
+    int? outerItemId,
     int? shoesItemId,
     int? hatItemId,
     int? bagItemId,
@@ -316,18 +426,134 @@ class DailyLookService {
       'image_url': imageUrl,
       'top_item_id': topItemId,
       'bottom_item_id': bottomItemId,
+      'outer_item_id': outerItemId,
       'shoes_item_id': shoesItemId,
       'hat_item_id': hatItemId,
       'bag_item_id': bagItemId,
       'accessory_item_id': accessoryItemId,
     };
 
+    final linkedItemIds = [
+      topItemId,
+      bottomItemId,
+      outerItemId,
+      shoesItemId,
+      hatItemId,
+      bagItemId,
+      accessoryItemId,
+    ].whereType<int>().toSet().toList();
+
     if (id == null) {
-      await _supabase.from('daily_looks').insert(payload);
+      await _insertDailyLookWithSchemaFallback(payload);
+      await _incrementWearCountForItems(linkedItemIds);
       return;
     }
 
-    await _supabase.from('daily_looks').update(payload).eq('id', id);
+    late final List<dynamic> previousRows;
+    try {
+      previousRows = await _supabase
+          .from('daily_looks')
+          .select('top_item_id, bottom_item_id, outer_item_id, shoes_item_id, hat_item_id, bag_item_id, accessory_item_id')
+          .eq('id', id)
+          .limit(1);
+    } on PostgrestException catch (e) {
+      if (!e.message.contains("'outer_item_id' column")) rethrow;
+      previousRows = await _supabase
+          .from('daily_looks')
+          .select('top_item_id, bottom_item_id, shoes_item_id, hat_item_id, bag_item_id, accessory_item_id')
+          .eq('id', id)
+          .limit(1);
+    }
+    final previousLook = previousRows.isNotEmpty
+      ? Map<String, dynamic>.from(previousRows.first as Map)
+      : <String, dynamic>{};
+    final previousLinkedItemIds = [
+      previousLook['top_item_id'],
+      previousLook['bottom_item_id'],
+      previousLook['outer_item_id'],
+      previousLook['shoes_item_id'],
+      previousLook['hat_item_id'],
+      previousLook['bag_item_id'],
+      previousLook['accessory_item_id'],
+    ].map((raw) {
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '');
+    }).whereType<int>().toSet();
+
+    await _updateDailyLookWithSchemaFallback(id, payload);
+    final newlyAddedItemIds = linkedItemIds.where((itemId) => !previousLinkedItemIds.contains(itemId)).toList();
+    await _incrementWearCountForItems(newlyAddedItemIds);
+
+  }
+
+  static Future<void> updateLookVisibility({
+    required int id,
+    required bool isPublic,
+  }) async {
+    await _supabase
+        .from('daily_looks')
+        .update({'is_public': isPublic})
+        .eq('id', id);
+  }
+
+  static Future<void> _incrementWearCountForItems(List<int> itemIds) async {
+    if (itemIds.isEmpty) return;
+    try {
+      final clothes = await SupabaseService.fetchClothesByIds(itemIds);
+      for (final row in clothes) {
+        final rawId = row['id'];
+        final id = rawId is num ? rawId.toInt() : int.tryParse(rawId.toString());
+        if (id == null) continue;
+        final current = row['wear_count'] is num
+            ? (row['wear_count'] as num).toInt()
+            : int.tryParse(row['wear_count']?.toString() ?? '0') ?? 0;
+        await SupabaseService.incrementWearCount(
+          id: id,
+          currentWearCount: current,
+        );
+      }
+    } catch (_) {
+      // Keep daily look save successful even if wear count sync fails.
+    }
+  }
+
+  static String? _extractMissingColumn(PostgrestException error) {
+    final match = RegExp("'([^']+)' column").firstMatch(error.message);
+    return match?.group(1);
+  }
+
+  static Future<void> _insertDailyLookWithSchemaFallback(Map<String, dynamic> payload) async {
+    final mutable = Map<String, dynamic>.from(payload);
+    for (var i = 0; i < 8; i++) {
+      try {
+        await _supabase.from('daily_looks').insert(mutable);
+        return;
+      } on PostgrestException catch (e) {
+        final missingColumn = _extractMissingColumn(e);
+        if (missingColumn == null || !mutable.containsKey(missingColumn)) {
+          rethrow;
+        }
+        mutable.remove(missingColumn);
+      }
+    }
+    await _supabase.from('daily_looks').insert(mutable);
+  }
+
+  static Future<void> _updateDailyLookWithSchemaFallback(int id, Map<String, dynamic> payload) async {
+    final mutable = Map<String, dynamic>.from(payload);
+    for (var i = 0; i < 8; i++) {
+      try {
+        await _supabase.from('daily_looks').update(mutable).eq('id', id);
+        return;
+      } on PostgrestException catch (e) {
+        final missingColumn = _extractMissingColumn(e);
+        if (missingColumn == null || !mutable.containsKey(missingColumn)) {
+          rethrow;
+        }
+        mutable.remove(missingColumn);
+      }
+    }
+    await _supabase.from('daily_looks').update(mutable).eq('id', id);
   }
 
   static Future<Map<String, dynamic>> getReactionSummary(int dailyLookId) async {
@@ -336,10 +562,15 @@ class DailyLookService {
         .from('daily_look_reactions')
         .select('reaction_type, user_id')
         .eq('daily_look_id', dailyLookId);
+    final bookmarkRows = await _supabase
+      .from('daily_look_bookmarks')
+      .select('id')
+      .eq('daily_look_id', dailyLookId);
 
     final list = rows as List;
     final likes = list.where((e) => e['reaction_type'] == 'like').length;
     final dislikes = list.where((e) => e['reaction_type'] == 'dislike').length;
+    final bookmarkCount = (bookmarkRows as List).length;
 
     String? myReaction;
     if (userId != null) {
@@ -354,6 +585,7 @@ class DailyLookService {
     return {
       'likes': likes,
       'dislikes': dislikes,
+      'bookmarkCount': bookmarkCount,
       'myReaction': myReaction,
     };
   }
@@ -458,5 +690,104 @@ class DailyLookService {
       }
       return look;
     }).where((look) => look['id'] != null).toList();
+  }
+
+  /// Follow/Following methods
+  static Future<bool> isFollowing(String userId) async {
+    final myId = _supabase.auth.currentUser?.id;
+    if (myId == null || myId == userId) return false;
+
+    try {
+      final row = await _supabase
+          .from('user_follows')
+          .select('id')
+          .eq('user_id', myId)
+          .eq('following_id', userId)
+          .maybeSingle();
+      return row != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> toggleFollow(String userId) async {
+    final myId = _supabase.auth.currentUser?.id;
+    if (myId == null || myId == userId) throw Exception('자신을 팔로우할 수 없습니다.');
+
+    final existing = await _supabase
+        .from('user_follows')
+        .select('id')
+        .eq('user_id', myId)
+        .eq('following_id', userId)
+        .maybeSingle()
+        .catchError((_) => null);
+
+    if (existing == null) {
+      // Follow
+      try {
+        await _supabase.from('user_follows').insert({
+          'user_id': myId,
+          'following_id': userId,
+        });
+      } catch (_) {
+        // Table might not exist yet, silently fail
+      }
+    } else {
+      // Unfollow
+      try {
+        await _supabase
+            .from('user_follows')
+            .delete()
+            .eq('id', existing['id']);
+      } catch (_) {
+        // Silently fail
+      }
+    }
+  }
+
+  static Future<Map<String, dynamic>> getUserStats(String userId) async {
+    int followers = 0;
+    int following = 0;
+    int posts = 0;
+
+    try {
+      final followersRows = await _supabase
+          .from('user_follows')
+          .select('id')
+          .eq('following_id', userId)
+          .count(CountOption.exact);
+      followers = followersRows.count;
+    } catch (_) {
+      // Silently fail
+    }
+
+    try {
+      final followingRows = await _supabase
+          .from('user_follows')
+          .select('id')
+          .eq('user_id', userId)
+          .count(CountOption.exact);
+      following = followingRows.count;
+    } catch (_) {
+      // Silently fail
+    }
+
+    try {
+      final postsRows = await _supabase
+          .from('daily_looks')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('is_public', true)
+          .count(CountOption.exact);
+      posts = postsRows.count;
+    } catch (_) {
+      // Silently fail
+    }
+
+    return {
+      'followers': followers,
+      'following': following,
+      'posts': posts,
+    };
   }
 }

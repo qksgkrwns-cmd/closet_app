@@ -116,7 +116,7 @@ class _OutfitDetailPageState extends State<OutfitDetailPage> {
                         child: ElevatedButton.icon(
                           onPressed: toggleSave,
                           icon: Icon(isSaved ? Icons.bookmark : Icons.bookmark_border),
-                          label: Text(isSaved ? '저장됨' : '저장'),
+                          label: Text(isSaved ? '보관함' : '저장'),
                         ),
                       ),
                     ],

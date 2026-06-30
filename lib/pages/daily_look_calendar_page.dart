@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../services/supabase_service.dart';
+import '../widgets/app_network_image.dart';
+import '../widgets/empty_state_view.dart';
 
 import '../services/daily_look_service.dart';
 import 'daily_look_detail_page.dart';
@@ -16,12 +18,58 @@ class DailyLookCalendarPage extends StatefulWidget {
 class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
   DateTime selectedDate = DateTime.now();
   DateTime focusedDate = DateTime.now();
-  CalendarFormat calendarFormat = CalendarFormat.month;
+  CalendarFormat calendarFormat = CalendarFormat.twoWeeks;
   Future<List<dynamic>>? looksFuture;
   Map<String, Map<String, dynamic>> lookByDate = {};
+  final Map<String, ValueNotifier<Map<String, dynamic>?>> selectedLinkedItemByLook = {};
+  final Map<int, int> itemLikesCount = {};
+  final Map<int, ValueNotifier<bool>> visibilityUpdatingByLookId = {};
+  final Map<int, ValueNotifier<bool>> visibilityValueByLookId = {};
+
+  void _resetLookUiStates() {
+    for (final notifier in selectedLinkedItemByLook.values) {
+      notifier.dispose();
+    }
+    selectedLinkedItemByLook.clear();
+    for (final notifier in visibilityUpdatingByLookId.values) {
+      notifier.dispose();
+    }
+    visibilityUpdatingByLookId.clear();
+    for (final notifier in visibilityValueByLookId.values) {
+      notifier.dispose();
+    }
+    visibilityValueByLookId.clear();
+  }
+
+  ValueNotifier<Map<String, dynamic>?> _selectedItemNotifier(String lookKey) {
+    return selectedLinkedItemByLook.putIfAbsent(
+      lookKey,
+      () => ValueNotifier<Map<String, dynamic>?>(null),
+    );
+  }
+
+  ValueNotifier<bool> _visibilityNotifier(Map<String, dynamic> look) {
+    final rawId = look['id'];
+    final lookId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+    if (lookId == null) {
+      return ValueNotifier<bool>(look['is_public'] == true);
+    }
+    return visibilityValueByLookId.putIfAbsent(
+      lookId,
+      () => ValueNotifier<bool>(look['is_public'] == true),
+    );
+  }
+
+  ValueNotifier<bool> _visibilityUpdatingNotifier(int lookId) {
+    return visibilityUpdatingByLookId.putIfAbsent(
+      lookId,
+      () => ValueNotifier<bool>(false),
+    );
+  }
 
   void _loadLooks() {
     setState(() {
+      _resetLookUiStates();
       looksFuture = DailyLookService.fetchMyLooksByDate(selectedDate);
     });
   }
@@ -36,7 +84,16 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
       final map = Map<String, dynamic>.from(row);
       final wearDate = (map['wear_date'] ?? '').toString();
       if (wearDate.isEmpty) continue;
-      mapped.putIfAbsent(wearDate, () => map);
+      final existing = mapped[wearDate];
+      if (existing == null) {
+        mapped[wearDate] = map;
+        continue;
+      }
+      final existingHasImage = (existing['image_url'] ?? '').toString().trim().isNotEmpty;
+      final currentHasImage = (map['image_url'] ?? '').toString().trim().isNotEmpty;
+      if (!existingHasImage && currentHasImage) {
+        mapped[wearDate] = map;
+      }
     }
 
     if (!mounted) return;
@@ -53,10 +110,27 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
     return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
+  bool _isBlank(dynamic value) {
+    return value == null || value.toString().trim().isEmpty;
+  }
+
+  String _formatPurchaseDate(dynamic raw) {
+    final parsed = DateTime.tryParse(raw?.toString() ?? '');
+    if (parsed == null) return '';
+    return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatPurchasePrice(dynamic raw) {
+    final price = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
+    if (price == null) return '';
+    return '${price}원';
+  }
+
   List<int> _linkedIds(Map<String, dynamic> look) {
     const keys = [
       'top_item_id',
       'bottom_item_id',
+      'outer_item_id',
       'shoes_item_id',
       'hat_item_id',
       'bag_item_id',
@@ -74,8 +148,63 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
     return ids;
   }
 
+  String _lookKey(Map<String, dynamic> look) {
+    final raw = look['id'];
+    if (raw is num) return raw.toInt().toString();
+    return (raw ?? '').toString();
+  }
+
+  Future<void> _togglePublic(Map<String, dynamic> look) async {
+    final rawId = look['id'];
+    final lookId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+    if (lookId == null) return;
+    final visibility = _visibilityNotifier(look);
+    final current = visibility.value;
+    final next = !current;
+    final wearDateKey = (look['wear_date'] ?? '').toString();
+    final updating = _visibilityUpdatingNotifier(lookId);
+
+    updating.value = true;
+    visibility.value = next;
+    look['is_public'] = next;
+    if (wearDateKey.isNotEmpty && lookByDate.containsKey(wearDateKey)) {
+      lookByDate[wearDateKey]!['is_public'] = next;
+    }
+
+    try {
+      await DailyLookService.updateLookVisibility(id: lookId, isPublic: next);
+      if (!mounted) return;
+      updating.value = false;
+    } catch (e) {
+      if (!mounted) return;
+      updating.value = false;
+      visibility.value = current;
+      look['is_public'] = current;
+      if (wearDateKey.isNotEmpty && lookByDate.containsKey(wearDateKey)) {
+        lookByDate[wearDateKey]!['is_public'] = current;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('공개 상태 변경 실패: $e')),
+      );
+    }
+  }
+
+  Future<void> _ensureItemLikesCount(int itemId) async {
+    if (itemLikesCount.containsKey(itemId)) return;
+    try {
+      final count = await SupabaseService.getClothesLikesCount(itemId);
+      if (!mounted) return;
+      itemLikesCount[itemId] = count;
+    } catch (_) {
+      if (!mounted) return;
+      itemLikesCount[itemId] = 0;
+    }
+  }
+
   Widget _buildLinkedItemsRow(Map<String, dynamic> look) {
     final ids = _linkedIds(look);
+    final lookKey = _lookKey(look);
+    final selectedNotifier = _selectedItemNotifier(lookKey);
     if (ids.isEmpty) {
       return const SizedBox(
         height: 70,
@@ -100,33 +229,153 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
           );
         }
 
-        return SizedBox(
-          height: 82,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: items.length,
-            separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return Container(
-                width: 82,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade300),
+        final byId = <int, Map<String, dynamic>>{};
+        for (final row in items) {
+          final item = Map<String, dynamic>.from(row);
+          final rawId = item['id'];
+          final itemId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+          if (itemId != null) {
+            byId[itemId] = item;
+          }
+        }
+        final orderedItems = ids
+            .map((id) => byId[id])
+            .whereType<Map<String, dynamic>>()
+            .toList();
+        if (orderedItems.isEmpty) {
+          return const SizedBox(
+            height: 70,
+            child: Center(child: Text('연결된 아이템이 없습니다.')),
+          );
+        }
+
+        return ValueListenableBuilder<Map<String, dynamic>?>(
+          valueListenable: selectedNotifier,
+          builder: (context, selectedItem, _) {
+            final selectedIdRaw = selectedItem?['id'];
+            final selectedId = selectedIdRaw is num
+                ? selectedIdRaw.toInt()
+                : int.tryParse(selectedIdRaw?.toString() ?? '');
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  height: 82,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: orderedItems.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final item = orderedItems[index];
+                      final rawId = item['id'];
+                      final itemId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+                      final isSelected = itemId != null && itemId == selectedId;
+
+                      return GestureDetector(
+                        onTap: () async {
+                          if (itemId == null) return;
+                          if (isSelected) {
+                            selectedNotifier.value = null;
+                            return;
+                          }
+                          selectedNotifier.value = item;
+                          await _ensureItemLikesCount(itemId);
+                          if (selectedNotifier.value != null &&
+                              (selectedNotifier.value!['id']?.toString() == item['id']?.toString())) {
+                            selectedNotifier.value = Map<String, dynamic>.from(item);
+                          }
+                        },
+                        child: Container(
+                          width: 82,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected ? Colors.orange : Colors.grey.shade300,
+                              width: isSelected ? 1.8 : 1,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: AppNetworkImage(
+                            imageUrl: item['image_url']?.toString(),
+                            fit: BoxFit.cover,
+                            fallbackIcon: Icons.checkroom,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: item['image_url'] != null
-                    ? Image.network(item['image_url'], fit: BoxFit.cover)
-                    : Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.checkroom),
-                      ),
-              );
-            },
-          ),
+                if (selectedItem != null) ...[
+                  const SizedBox(height: 10),
+                  Builder(
+                    builder: (context) {
+                      final seasonsRaw = selectedItem['seasons'];
+                      final seasons = seasonsRaw is List
+                          ? seasonsRaw.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList()
+                          : <String>[];
+                      final rawId = selectedItem['id'];
+                      final selectedItemId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+                      final likesCount = selectedItemId == null ? 0 : (itemLikesCount[selectedItemId] ?? 0);
+
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
+                          color: Colors.white,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (!_isBlank(selectedItem['brand']))
+                              Text(
+                                selectedItem['brand'].toString(),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            if (!_isBlank(selectedItem['category']))
+                              Text('카테고리: ${selectedItem['category']}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (seasons.isNotEmpty)
+                              Text('계절: ${seasons.join(', ')}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (_formatPurchaseDate(selectedItem['purchase_date']).isNotEmpty)
+                              Text('구입시기: ${_formatPurchaseDate(selectedItem['purchase_date'])}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (_formatPurchasePrice(selectedItem['purchase_price']).isNotEmpty)
+                              Text('구입가격: ${_formatPurchasePrice(selectedItem['purchase_price'])}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (!_isBlank(selectedItem['size']))
+                              Text('사이즈: ${selectedItem['size']}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (!_isBlank(selectedItem['comment']))
+                              Text('메모: ${selectedItem['comment']}',
+                                  style: const TextStyle(color: Colors.black87)),
+                            if (likesCount >= 1)
+                              Text('좋아요 횟수: $likesCount',
+                                  style: const TextStyle(color: Colors.black87)),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    _resetLookUiStates();
+    super.dispose();
   }
 
   @override
@@ -139,7 +388,7 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('데일리룩 캘린더')),
+      appBar: AppBar(title: const Text('데일리룩')),
       body: Column(
         children: [
           TableCalendar(
@@ -165,9 +414,64 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
             },
             onPageChanged: (focused) {
               focusedDate = focused;
+              _resetLookUiStates();
               _loadMonthLooks(focused);
             },
             calendarBuilders: CalendarBuilders(
+              todayBuilder: (context, day, focusedDay) {
+                final look = lookByDate[_dateKey(day)];
+                if (look == null) {
+                  return Container(
+                    alignment: Alignment.center,
+                    child: Text('${day.day}'),
+                  );
+                }
+                final imageUrl = look['image_url']?.toString();
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (imageUrl != null && imageUrl.isNotEmpty)
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(imageUrl, fit: BoxFit.contain),
+                        ),
+                      )
+                    else
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.orange.shade700, width: 1.4),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.topRight,
+                      child: Container(
+                        margin: const EdgeInsets.all(2),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${day.day}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
               defaultBuilder: (context, day, focusedDay) {
                 final look = lookByDate[_dateKey(day)];
                 if (look == null) return null;
@@ -176,9 +480,15 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                   fit: StackFit.expand,
                   children: [
                     if (imageUrl != null && imageUrl.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(imageUrl, fit: BoxFit.cover),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(imageUrl, fit: BoxFit.contain),
+                        ),
                       )
                     else
                       Container(
@@ -222,9 +532,15 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                   fit: StackFit.expand,
                   children: [
                     if (imageUrl != null && imageUrl.isNotEmpty)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(imageUrl, fit: BoxFit.cover),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.network(imageUrl, fit: BoxFit.contain),
+                        ),
                       ),
                     Container(
                       decoration: BoxDecoration(
@@ -273,10 +589,15 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
 
                 final looks = snapshot.data ?? [];
                 if (looks.isEmpty) {
-                  return const Center(child: Text('작성된 데일리룩이 없습니다.'));
+                  return const EmptyStateView(
+                    icon: Icons.calendar_month,
+                    title: '작성된 데일리룩이 없습니다.',
+                    subtitle: '오른쪽 아래 + 버튼으로 오늘의 룩을 등록해보세요.',
+                  );
                 }
 
                 return ListView.builder(
+                  key: const PageStorageKey<String>('daily-look-calendar-list'),
                   padding: const EdgeInsets.only(bottom: 96),
                   itemCount: looks.length,
                   itemBuilder: (context, index) {
@@ -294,7 +615,10 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                                 final changed = await Navigator.push<bool>(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => DailyLookDetailPage(look: look),
+                                    builder: (_) => DailyLookDetailPage(
+                                      look: look,
+                                      showAccountLink: false,
+                                    ),
                                   ),
                                 );
                                 if (changed == true) {
@@ -304,18 +628,14 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                               },
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
-                                child: look['image_url'] != null
-                                    ? Image.network(
-                                        look['image_url'],
-                                        width: double.infinity,
-                                        height: 180,
-                                        fit: BoxFit.cover,
-                                      )
-                                    : Container(
-                                        height: 180,
-                                        color: Colors.grey.shade200,
-                                        child: const Center(child: Icon(Icons.image_not_supported)),
-                                      ),
+                                child: SizedBox(
+                                  height: 180,
+                                  child: AppNetworkImage(
+                                    imageUrl: look['image_url']?.toString(),
+                                    fit: BoxFit.contain,
+                                    fallbackIcon: Icons.image_not_supported,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 10),
@@ -335,9 +655,42 @@ class _DailyLookCalendarPageState extends State<DailyLookCalendarPage> {
                             _buildLinkedItemsRow(look),
                             const SizedBox(height: 6),
                             Align(
-                              alignment: Alignment.centerRight,
-                              child: Chip(
-                                label: Text((look['is_public'] ?? true) ? '공개' : '비공개'),
+                              alignment: Alignment.center,
+                              child: Builder(
+                                builder: (context) {
+                                  final rawId = look['id'];
+                                  final lookId = rawId is num
+                                      ? rawId.toInt()
+                                      : int.tryParse(rawId?.toString() ?? '');
+                                  if (lookId == null) {
+                                    return ActionChip(
+                                      onPressed: null,
+                                      label: Text((look['is_public'] ?? true) ? '공개' : '비공개'),
+                                    );
+                                  }
+                                  final publicNotifier = _visibilityNotifier(look);
+                                  final updatingNotifier = _visibilityUpdatingNotifier(lookId);
+                                  return ValueListenableBuilder<bool>(
+                                    valueListenable: updatingNotifier,
+                                    builder: (context, isUpdating, _) {
+                                      return ValueListenableBuilder<bool>(
+                                        valueListenable: publicNotifier,
+                                        builder: (context, isPublic, __) {
+                                          return ActionChip(
+                                            onPressed: isUpdating ? null : () => _togglePublic(look),
+                                            label: isUpdating
+                                                ? const SizedBox(
+                                                    width: 14,
+                                                    height: 14,
+                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                  )
+                                                : Text(isPublic ? '공개' : '비공개'),
+                                          );
+                                        },
+                                      );
+                                    },
+                                  );
+                                },
                               ),
                             ),
                           ],

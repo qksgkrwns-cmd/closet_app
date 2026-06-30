@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/gemini_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/color_selector.dart';
@@ -14,31 +15,99 @@ class AddClothesPage extends StatefulWidget {
 
 class _AddClothesPageState extends State<AddClothesPage> {
   static const Map<String, List<String>> categoryHierarchy = {
-    '상의': ['상의', '반팔티', '긴팔티', '셔츠', '후드', '니트'],
-    '하의': ['하의', '청바지', '면바지', '트레이닝', '치마'],
-    '아우터': ['아우터', '자켓', '코트', '점퍼'],
-    '신발': ['신발', '스니커즈', '로퍼', '구두'],
-    '모자': ['모자', '야구모', '비니'],
-    '잡동사니': ['잡동사니', '가방', '시계', '목도리', '장갑'],
+    '상의': ['반팔티', '긴팔티', '셔츠', '맨투맨', '후드', '니트', '블라우스'],
+    '하의': ['청바지', '슬랙스', '면바지', '반바지', '치마', '트레이닝', '레깅스'],
+    '아우터': ['자켓', '코트', '패딩', '가디건', '점퍼', '바람막이', '베스트'],
+    '신발': ['스니커즈', '로퍼', '구두', '샌들', '부츠', '슬리퍼', '런닝화'],
+    '모자': ['볼캡', '버킷햇', '비니', '베레모', '페도라', '썬캡', '니트모자'],
+    '잡동사니': ['가방', '시계', '목도리', '장갑', '벨트', '양말', '선글라스'],
   };
 
   File? selectedImage;
-  String selectedCategory = '상의';
-  String selectedSubcategory = '상의';
-  String selectedColor = '블랙';
-  String selectedBrand = '기타';
+  String? selectedCategory;
+  String? selectedSubcategory;
+  String? selectedColor;
+  String selectedBrand = '';
   List<String> selectedSeasons = [];
   DateTime? purchaseDate;
   final priceController = TextEditingController();
   final sizeController = TextEditingController();
   final commentController = TextEditingController();
   bool enableAIAnalysis = true;
+  bool _submitted = false;
+  bool _isSaving = false;
   final brandController = TextEditingController();
+  List<String> _recentBrands = [];
+  List<String> _recentSizes = [];
+
+  List<String> _subcategoriesFor(String? category) {
+    if (category == null) return const [];
+    return categoryHierarchy[category] ?? const [];
+  }
+
+  String? _normalizeCategoryLabel(String? raw) {
+    final value = (raw ?? '').trim().toLowerCase();
+    switch (value) {
+      case 'top':
+      case '상의':
+        return '상의';
+      case 'bottom':
+      case '하의':
+        return '하의';
+      case 'outerwear':
+      case 'outer':
+      case '아우터':
+        return '아우터';
+      case 'shoes':
+      case 'shoe':
+      case '신발':
+        return '신발';
+      case 'hat':
+      case '모자':
+        return '모자';
+      case 'bag':
+      case 'accessory':
+      case '잡동사니':
+        return '잡동사니';
+      default:
+        return categoryHierarchy.keys.contains(raw) ? raw : null;
+    }
+  }
+
+  String _purchaseDateText() {
+    if (purchaseDate == null) return '미입력';
+    return '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   void initState() {
     super.initState();
-    brandController.text = selectedBrand;
+    _loadRecentInputs();
+  }
+
+  Future<void> _loadRecentInputs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _recentBrands = prefs.getStringList('recent_brands') ?? [];
+      _recentSizes = prefs.getStringList('recent_sizes') ?? [];
+    });
+  }
+
+  Future<void> _rememberRecentInputs() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final brand = selectedBrand.trim();
+    if (brand.isNotEmpty) {
+      final nextBrands = [brand, ..._recentBrands.where((e) => e != brand)].take(5).toList();
+      await prefs.setStringList('recent_brands', nextBrands);
+    }
+
+    final size = sizeController.text.trim();
+    if (size.isNotEmpty) {
+      final nextSizes = [size, ..._recentSizes.where((e) => e != size)].take(5).toList();
+      await prefs.setStringList('recent_sizes', nextSizes);
+    }
   }
 
   @override
@@ -52,11 +121,21 @@ class _AddClothesPageState extends State<AddClothesPage> {
 
   Future<void> pickPurchaseDate() async {
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showDialog<DateTime>(
       context: context,
-      initialDate: purchaseDate ?? now,
-      firstDate: DateTime(2000),
-      lastDate: now,
+      builder: (context) {
+        return Dialog(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: CalendarDatePicker(
+              initialDate: purchaseDate ?? now,
+              firstDate: DateTime(2000),
+              lastDate: now,
+              onDateChanged: (date) => Navigator.pop(context, date),
+            ),
+          ),
+        );
+      },
     );
 
     if (picked != null) {
@@ -89,11 +168,12 @@ class _AddClothesPageState extends State<AddClothesPage> {
       }
 
       debugPrint('[AI] Raw result: $result');
-      final analyzedCategory = result['category'] ?? '상의';
+      final analyzedCategory = _normalizeCategoryLabel(result['category']?.toString()) ?? '상의';
       setState(() {
         selectedCategory = analyzedCategory;
-        selectedSubcategory = analyzedCategory;
-        selectedBrand = result['brand'] ?? '기타';
+        final subs = _subcategoriesFor(analyzedCategory);
+        selectedSubcategory = subs.isNotEmpty ? subs.first : null;
+        selectedBrand = (result['brand'] ?? '').toString();
         brandController.text = selectedBrand;
         selectedColor = normalizeColorLabel(result['color']?.toString());
         selectedSeasons = List<String>.from(result['seasons'] ?? []);
@@ -112,15 +192,34 @@ class _AddClothesPageState extends State<AddClothesPage> {
   }
 
   Future<void> saveClothes() async {
+    setState(() => _submitted = true);
     try {
+      if (selectedCategory == null || selectedSubcategory == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('카테고리를 선택해주세요.')),
+          );
+        }
+        return;
+      }
+      if (selectedColor == null || selectedColor!.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('색상을 선택해주세요.')),
+          );
+        }
+        return;
+      }
+
+      setState(() => _isSaving = true);
       // 대분류와 소분류를 합쳐서 저장 (예: "상의/반팔티")
       final categoryToSave = selectedSubcategory == selectedCategory
-          ? selectedCategory
+          ? selectedCategory!
           : '$selectedCategory/$selectedSubcategory';
       await SupabaseService.saveClothes(
         category: categoryToSave,
-        brand: selectedBrand,
-        color: selectedColor,
+        brand: selectedBrand.trim(),
+        color: selectedColor!,
         seasons: selectedSeasons,
         size: sizeController.text,
         purchaseDate: purchaseDate,
@@ -128,9 +227,19 @@ class _AddClothesPageState extends State<AddClothesPage> {
         comment: commentController.text,
         imageFile: selectedImage,
       );
-      if (mounted) Navigator.pop(context);
+      await _rememberRecentInputs();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('저장되었습니다.')),
+        );
+        Navigator.pop(context);
+      }
     } catch (e) {
       debugPrint('[AI] saveClothes error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -140,7 +249,7 @@ class _AddClothesPageState extends State<AddClothesPage> {
       appBar: AppBar(title: const Text('옷 등록')),
       body: SingleChildScrollView(
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
           child: Column(
             children: [
               Card(
@@ -160,26 +269,46 @@ class _AddClothesPageState extends State<AddClothesPage> {
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: '카테고리 (대분류)'),
                 value: selectedCategory,
+                hint: const Text('선택하세요'),
                 items: categoryHierarchy.keys
                     .map((cat) => DropdownMenuItem(value: cat, child: Text(cat)))
                     .toList(),
                 onChanged: (value) {
                   if (value != null) {
+                    final subs = _subcategoriesFor(value);
                     setState(() {
                       selectedCategory = value;
-                      selectedSubcategory = categoryHierarchy[value]![0];
+                      selectedSubcategory = subs.isNotEmpty ? subs.first : null;
                     });
                   }
                 },
               ),
+              if (_submitted && selectedCategory == null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '카테고리를 선택해주세요.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: '카테고리 (세부)'),
-                value: selectedSubcategory,
-                items: (categoryHierarchy[selectedCategory] ?? [])
+                value: _subcategoriesFor(selectedCategory).contains(selectedSubcategory)
+                  ? selectedSubcategory
+                  : (_subcategoriesFor(selectedCategory).isNotEmpty
+                    ? _subcategoriesFor(selectedCategory).first
+                    : null),
+                hint: const Text('선택하세요'),
+                items: _subcategoriesFor(selectedCategory)
                     .map((sub) => DropdownMenuItem(value: sub, child: Text(sub)))
                     .toList(),
-                onChanged: (value) => setState(() => selectedSubcategory = value!),
+                onChanged: selectedCategory == null
+                    ? null
+                    : (value) => setState(() => selectedSubcategory = value),
               ),
               const SizedBox(height: 12),
               TextFormField(
@@ -187,53 +316,128 @@ class _AddClothesPageState extends State<AddClothesPage> {
                 decoration: const InputDecoration(labelText: '브랜드'),
                 onChanged: (value) => selectedBrand = value,
               ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('구입 시기 (선택)'),
-                subtitle: Text(
-                  purchaseDate == null
-                      ? '미입력'
-                      : '${purchaseDate!.year}-${purchaseDate!.month.toString().padLeft(2, '0')}-${purchaseDate!.day.toString().padLeft(2, '0')}',
+              if (_recentBrands.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _recentBrands
+                        .map(
+                          (brand) => ActionChip(
+                            label: Text(brand),
+                            onPressed: () {
+                              setState(() {
+                                selectedBrand = brand;
+                                brandController.text = brand;
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
                 ),
-                trailing: Wrap(
-                  spacing: 8,
-                  children: [
-                    if (purchaseDate != null)
-                      IconButton(
-                        onPressed: () => setState(() => purchaseDate = null),
-                        icon: const Icon(Icons.clear),
-                      ),
-                    IconButton(
-                      onPressed: pickPurchaseDate,
-                      icon: const Icon(Icons.calendar_today),
+              ],
+              const SizedBox(height: 12),
+              InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: pickPurchaseDate,
+                child: InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: '구입 시기',
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (purchaseDate != null)
+                          IconButton(
+                            tooltip: '구입 시기 초기화',
+                            onPressed: () => setState(() => purchaseDate = null),
+                            icon: const Icon(Icons.clear),
+                          ),
+                        IconButton(
+                          tooltip: '날짜 선택',
+                          onPressed: pickPurchaseDate,
+                          icon: const Icon(Icons.calendar_today),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      _purchaseDateText(),
+                      style: TextStyle(
+                        color: purchaseDate == null ? Colors.grey.shade400 : null,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               TextFormField(
                 controller: priceController,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '구입 가격 (선택)'),
+                decoration: const InputDecoration(labelText: '구입 가격'),
               ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: sizeController,
-                decoration: const InputDecoration(labelText: '사이즈 (선택, 예: M / 270)'),
+                decoration: const InputDecoration(labelText: '사이즈 (예: M / 270)'),
               ),
+              if (_recentSizes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: _recentSizes
+                        .map(
+                          (size) => ActionChip(
+                            label: Text(size),
+                            onPressed: () {
+                              setState(() {
+                                sizeController.text = size;
+                              });
+                            },
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               TextFormField(
                 controller: commentController,
                 minLines: 2,
                 maxLines: 4,
-                decoration: const InputDecoration(labelText: '메모 (선택)'),
+                decoration: const InputDecoration(labelText: '메모'),
               ),
               const SizedBox(height: 20),
               ColorSelector(
                 selectedColor: selectedColor,
                 onColorSelected: (color) => setState(() => selectedColor = color),
               ),
+              if (_submitted && (selectedColor == null || selectedColor!.isEmpty))
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '색상을 선택해주세요.',
+                      style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 20),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '계절',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 children: ['봄', '여름', '가을', '겨울']
@@ -247,9 +451,24 @@ class _AddClothesPageState extends State<AddClothesPage> {
                         ))
                     .toList(),
               ),
-              const SizedBox(height: 20),
-              ElevatedButton(onPressed: saveClothes, child: const Text('저장')),
             ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _isSaving ? null : saveClothes,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('저장'),
           ),
         ),
       ),

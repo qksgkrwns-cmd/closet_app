@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/profile_service.dart';
+import '../widgets/empty_state_view.dart';
 import 'home_page.dart';
 import 'login_page.dart';
 
@@ -31,6 +32,17 @@ class _AuthGatePageState extends State<AuthGatePage> {
     return StreamBuilder<AuthState>(
       stream: _supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _supabase.auth.currentSession == null) {
+          return const Scaffold(
+            body: EmptyStateView(
+              icon: Icons.hourglass_top,
+              title: '앱을 준비하고 있습니다.',
+              subtitle: '잠시만 기다려주세요.',
+            ),
+          );
+        }
+
         // While waiting for the first auth event, check synchronously
         final session = snapshot.hasData
             ? snapshot.data!.session

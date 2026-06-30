@@ -43,18 +43,43 @@ class ClothesListItem extends StatelessWidget {
         : int.tryParse(item['wear_count']?.toString() ?? '0') ?? 0;
 
     return Card(
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
         onTap: onTap,
         onLongPress: () => _showDeleteDialog(context),
         leading: item['image_url'] != null
-            ? SizedBox(
+            ? Container(
                 width: 60,
                 height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                ),
+                clipBehavior: Clip.antiAlias,
                 child: Image.network(item['image_url'], fit: BoxFit.cover),
               )
-            : const Icon(Icons.checkroom),
-        title: Text(item['category'] ?? ''),
-        subtitle: Text('${item['brand'] ?? "기타"} · ${normalizeColorLabel(item['color']?.toString())} · 착용 ${wearCount}회'),
+            : Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                ),
+                child: const Icon(Icons.checkroom),
+              ),
+        title: Text(
+          item['category'] ?? '',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '${item['brand'] ?? "기타"} · ${normalizeColorLabel(item['color']?.toString())} · 착용 ${wearCount}회',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

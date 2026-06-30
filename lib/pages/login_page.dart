@@ -13,6 +13,7 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   bool _isLoading = false;
+  bool _submitted = false;
 
   String? get _mobileRedirectUrl {
     if (kIsWeb) return null;
@@ -38,6 +39,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _sendMagicLink() async {
     final email = _emailController.text.trim();
+    setState(() => _submitted = true);
     if (email.isEmpty || !email.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('올바른 이메일을 입력해주세요.')),
@@ -98,52 +100,102 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hasEmailError = _submitted &&
+        (_emailController.text.trim().isEmpty || !_emailController.text.contains('@'));
+
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 36, 24, 120),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(),
+              const SizedBox(height: 24),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35)),
+                ),
+                child: Icon(
+                  Icons.checkroom,
+                  size: 34,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 24),
               const Text(
                 'Closet App',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 12),
-              const Text(
-                '이메일만 입력하고 바로 시작하세요',
-                textAlign: TextAlign.center,
+              const SizedBox(height: 10),
+              Text(
+                '이메일 링크로 빠르게 로그인하고 옷장과 데일리룩을 바로 관리하세요.',
+                style: TextStyle(color: Colors.grey.shade400, height: 1.4),
               ),
               const SizedBox(height: 28),
               TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.done,
+                onChanged: (_) {
+                  if (_submitted) setState(() {});
+                },
+                onSubmitted: (_) {
+                  if (!_isLoading) _sendMagicLink();
+                },
                 decoration: const InputDecoration(
                   labelText: '이메일',
-                  border: OutlineInputBorder(),
+                  hintText: 'name@example.com',
                 ),
               ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _sendMagicLink,
-                child: _isLoading
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('로그인 링크 받기'),
+              if (hasEmailError)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '올바른 이메일을 입력해주세요.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.mark_email_read_outlined, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '비밀번호 없이 메일 링크로 로그인됩니다.',
+                        style: TextStyle(color: Colors.grey.shade300),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              const Text(
-                '비밀번호 없이 메일 링크로 로그인됩니다.',
-                textAlign: TextAlign.center,
-              ),
-              const Spacer(),
             ],
           ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+        child: FilledButton(
+          onPressed: _isLoading ? null : _sendMagicLink,
+          child: _isLoading
+              ? const SizedBox(
+                  height: 18,
+                  width: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('로그인 링크 받기'),
         ),
       ),
     );

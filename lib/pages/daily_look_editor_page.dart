@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/daily_look_service.dart';
 import '../services/supabase_service.dart';
+import '../widgets/app_network_image.dart';
 import 'daily_look_item_picker_page.dart';
 
 class DailyLookEditorPage extends StatefulWidget {
@@ -30,10 +31,12 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
   File? selectedImage;
   String? existingImageUrl;
   bool isSaving = false;
+  bool _submitted = false;
 
   final Map<String, int?> selectedItemIds = {
     'top_item_id': null,
     'bottom_item_id': null,
+    'outer_item_id': null,
     'shoes_item_id': null,
     'hat_item_id': null,
     'bag_item_id': null,
@@ -43,6 +46,7 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
   final List<Map<String, String>> itemConfig = const [
     {'label': '상의', 'key': 'top_item_id'},
     {'label': '하의', 'key': 'bottom_item_id'},
+    {'label': '아우터', 'key': 'outer_item_id'},
     {'label': '신발', 'key': 'shoes_item_id'},
     {'label': '모자', 'key': 'hat_item_id'},
     {'label': '가방', 'key': 'bag_item_id'},
@@ -131,9 +135,11 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
 
   Future<void> _save() async {
     final content = contentController.text.trim();
-    if (content.isEmpty) {
+    setState(() => _submitted = true);
+    final hasImage = selectedImage != null || (existingImageUrl?.trim().isNotEmpty == true);
+    if (!hasImage) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('내용을 입력해주세요.')),
+        const SnackBar(content: Text('데일리룩 이미지를 등록해주세요.')),
       );
       return;
     }
@@ -150,6 +156,7 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
         oldImageUrl: existingImageUrl,
         topItemId: selectedItemIds['top_item_id'],
         bottomItemId: selectedItemIds['bottom_item_id'],
+        outerItemId: selectedItemIds['outer_item_id'],
         shoesItemId: selectedItemIds['shoes_item_id'],
         hatItemId: selectedItemIds['hat_item_id'],
         bagItemId: selectedItemIds['bag_item_id'],
@@ -160,6 +167,9 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
       await prefs.setBool('daily_look_default_public', isPublic);
 
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('데일리룩이 저장되었습니다.')),
+      );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -176,7 +186,8 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
       context,
       MaterialPageRoute(
         builder: (_) => DailyLookItemPickerPage(
-          category: label,
+          categoryLabel: label,
+          slotKey: key,
           selectedItemId: selectedItemIds[key],
         ),
       ),
@@ -206,12 +217,11 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
               SizedBox(
                 width: 72,
                 height: 72,
-                child: item?['image_url'] != null
-                    ? Image.network(item!['image_url'], fit: BoxFit.cover)
-                    : Container(
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.checkroom),
-                      ),
+                child: AppNetworkImage(
+                  imageUrl: item?['image_url']?.toString(),
+                  fit: BoxFit.cover,
+                  fallbackIcon: Icons.checkroom,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -270,31 +280,54 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = selectedImage != null || (existingImageUrl?.trim().isNotEmpty == true);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.existingLook == null ? '오늘의 코디 작성' : '데일리 코디 수정'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
         child: Column(
           children: [
             if (selectedImage != null)
               Image.file(selectedImage!, height: 220, fit: BoxFit.cover)
             else if (existingImageUrl != null)
-              Image.network(existingImageUrl!, height: 220, fit: BoxFit.cover),
+              SizedBox(
+                height: 220,
+                child: AppNetworkImage(
+                  imageUrl: existingImageUrl,
+                  fit: BoxFit.cover,
+                  fallbackIcon: Icons.image_not_supported,
+                ),
+              ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _pickImage,
               icon: const Icon(Icons.photo_library),
               label: const Text('화면 사진 업로드'),
             ),
+            if (_submitted && !hasImage)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '데일리룩 이미지를 등록해주세요.',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+                  ),
+                ),
+              ),
             const SizedBox(height: 12),
             TextField(
               controller: contentController,
               minLines: 3,
               maxLines: 6,
+              onChanged: (_) {
+                if (_submitted) setState(() {});
+              },
               decoration: const InputDecoration(
-                labelText: '내용 입력',
+                labelText: '내용 입력 (선택)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -328,21 +361,21 @@ class _DailyLookEditorPageState extends State<DailyLookEditorPage> {
                 child: _buildSelectedItemCard(cfg['label']!, cfg['key']!),
               ),
             ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: isSaving ? null : _save,
-                child: isSaving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('작성 완료'),
-              ),
-            ),
           ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        child: FilledButton(
+          onPressed: isSaving ? null : _save,
+          child: isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('작성 완료'),
         ),
       ),
     );
